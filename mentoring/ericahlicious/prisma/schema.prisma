@@ -1,0 +1,160 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  SUPERVISOR
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderType {
+  DINE_IN
+  TAKE_OUT
+}
+
+enum IngredientStatus {
+  GOOD
+  LOW
+  CRITICAL
+  EXPIRED
+}
+
+enum PaymentMethod {
+  CASH
+  GCASH
+  CARD
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  password     String   @db.Text
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  ingredientsUpdated Ingredient[]  @relation("IngredientUpdatedBy")
+  ordersProcessed    Order[]       @relation("OrderProcessedBy")
+  transactions       Transaction[] @relation("TransactionProcessedBy")
+
+  @@map("users")
+}
+
+model MenuItem {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  price       Decimal  @db.Decimal(10, 2)
+  category    String
+  imageUrl    String?  @db.Text
+  isArchived  Boolean  @default(false)
+  promoPrice  Decimal? @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  ingredients MenuItemIngredient[]
+  orderItems  OrderItem[]
+
+  @@map("menu_items")
+}
+
+model MenuItemIngredient {
+  id           String  @id @default(uuid())
+  menuItemId   String
+  ingredientId String
+  quantity     Decimal @db.Decimal(10, 3)
+  unit         String
+
+  menuItem   MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@map("menu_item_ingredients")
+}
+
+model Ingredient {
+  id        String           @id @default(uuid())
+  name      String
+  category  String
+  stock     Decimal          @db.Decimal(10, 3)
+  unit      String
+  supplier  String?
+  expiryDate DateTime?
+  status    IngredientStatus @default(GOOD)
+  updatedById String?
+  updatedAt DateTime         @updatedAt
+
+  updatedBy    User?                @relation("IngredientUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  menuItems    MenuItemIngredient[]
+
+  @@map("ingredients")
+}
+
+model Order {
+  id                  String      @id @default(uuid())
+  orderNumber         Int         @unique @default(autoincrement())
+  type                OrderType
+  status              OrderStatus @default(PENDING)
+  totalAmount         Decimal     @db.Decimal(10, 2)
+  qrToken             String?     @db.Text
+  processedById       String?
+  tableNumber         Int?
+  specialInstructions String?     @db.Text
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  processedBy User?       @relation("OrderProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+  transaction Transaction?
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String  @id @default(uuid())
+  orderId             String
+  menuItemId          String
+  quantity            Int
+  unitPrice           Decimal @db.Decimal(10, 2)
+  variation           String?
+  specialInstructions String? @db.Text
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@map("order_items")
+}
+
+model Transaction {
+  id              String        @id @default(uuid())
+  orderId         String        @unique
+  processedById   String?
+  amountPaid      Decimal       @db.Decimal(10, 2)
+  change          Decimal       @db.Decimal(10, 2)
+  paymentMethod   PaymentMethod
+  createdAt       DateTime      @default(now())
+
+  order       Order @relation(fields: [orderId], references: [id])
+  processedBy User? @relation("TransactionProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
+
+  @@map("transactions")
+}
