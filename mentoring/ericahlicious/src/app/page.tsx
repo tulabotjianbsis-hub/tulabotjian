@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 
-export default function HomePage() {
-  // Root redirects to the role selection page in the admin app
-  redirect("/select-role");
+export default async function HomePage() {
+  const session = await auth();
+  
+  if (session?.user) {
+    redirect("/dashboard");
+  } else {
+    redirect("/login");
+  }
 }

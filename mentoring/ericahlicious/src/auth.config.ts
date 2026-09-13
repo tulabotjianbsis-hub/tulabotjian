@@ -7,8 +7,17 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const isAdminRoute = nextUrl.pathname.startsWith("/dashboard") || nextUrl.pathname.startsWith("/login");
-      const isCustomerRoute = nextUrl.pathname.startsWith("/menu") || nextUrl.pathname.startsWith("/cart") || nextUrl.pathname.startsWith("/checkout") || nextUrl.pathname.startsWith("/order");
+      const isAdminRoute = nextUrl.pathname.startsWith("/dashboard") || 
+                           nextUrl.pathname.startsWith("/menu") ||
+                           nextUrl.pathname.startsWith("/ingredients") ||
+                           nextUrl.pathname.startsWith("/orders") ||
+                           nextUrl.pathname.startsWith("/kitchen") ||
+                           nextUrl.pathname.startsWith("/alerts") ||
+                           nextUrl.pathname.startsWith("/analytics") ||
+                           nextUrl.pathname.startsWith("/recommendations");
+      const isCustomerRoute = nextUrl.pathname.startsWith("/cart") || 
+                             nextUrl.pathname.startsWith("/checkout") || 
+                             nextUrl.pathname.startsWith("/order");
 
       if (isAdminRoute) {
         if (isLoggedIn) return true;

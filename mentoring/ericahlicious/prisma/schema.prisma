@@ -6,48 +6,16 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
-}
-
-enum Role {
-  OWNER
-  ADMIN
-  SUPERVISOR
-}
-
-enum OrderStatus {
-  PENDING
-  PREPARING
-  READY
-  COMPLETED
-  CANCELLED
-}
-
-enum OrderType {
-  DINE_IN
-  TAKE_OUT
-}
-
-enum IngredientStatus {
-  GOOD
-  LOW
-  CRITICAL
-  EXPIRED
-}
-
-enum PaymentMethod {
-  CASH
-  GCASH
-  CARD
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model User {
   id           String   @id @default(uuid())
   name         String
   email        String   @unique
-  password     String   @db.Text
-  role         Role
+  password     String
+  role         String   // OWNER, ADMIN, SUPERVISOR
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -55,6 +23,7 @@ model User {
   ingredientsUpdated Ingredient[]  @relation("IngredientUpdatedBy")
   ordersProcessed    Order[]       @relation("OrderProcessedBy")
   transactions       Transaction[] @relation("TransactionProcessedBy")
+  inventoryLogs      InventoryLog[] @relation("InventoryLogRecordedBy")
 
   @@map("users")
 }
@@ -62,12 +31,12 @@ model User {
 model MenuItem {
   id          String   @id @default(uuid())
   name        String
-  description String?  @db.Text
-  price       Decimal  @db.Decimal(10, 2)
+  description String?
+  price       Float
   category    String
-  imageUrl    String?  @db.Text
+  imageUrl    String?
   isArchived  Boolean  @default(false)
-  promoPrice  Decimal? @db.Decimal(10, 2)
+  promoPrice  Float?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -82,7 +51,7 @@ model MenuItemIngredient {
   id           String  @id @default(uuid())
   menuItemId   String
   ingredientId String
-  quantity     Decimal @db.Decimal(10, 3)
+  quantity     Float
   unit         String
 
   menuItem   MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
@@ -92,39 +61,42 @@ model MenuItemIngredient {
 }
 
 model Ingredient {
-  id        String           @id @default(uuid())
+  id        String   @id @default(uuid())
   name      String
   category  String
-  stock     Decimal          @db.Decimal(10, 3)
+  stock     Float
   unit      String
   supplier  String?
   expiryDate DateTime?
-  status    IngredientStatus @default(GOOD)
+  status    String   @default("GOOD") // GOOD, LOW, CRITICAL, EXPIRED
   updatedById String?
-  updatedAt DateTime         @updatedAt
+  updatedAt DateTime @updatedAt
 
   updatedBy    User?                @relation("IngredientUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   menuItems    MenuItemIngredient[]
+  logs         InventoryLog[]
+  alerts       Alert[]
 
   @@map("ingredients")
 }
 
 model Order {
-  id                  String      @id @default(uuid())
-  orderNumber         Int         @unique @default(autoincrement())
-  type                OrderType
-  status              OrderStatus @default(PENDING)
-  totalAmount         Decimal     @db.Decimal(10, 2)
-  qrToken             String?     @db.Text
+  id                  String   @id @default(uuid())
+  orderNumber         Int      @unique
+  type                String   // DINE_IN, TAKE_OUT
+  status              String   @default("PENDING") // PENDING, PREPARING, READY, COMPLETED, CANCELLED
+  totalAmount         Float
+  qrToken             String?
   processedById       String?
   tableNumber         Int?
-  specialInstructions String?     @db.Text
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  specialInstructions String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   processedBy User?       @relation("OrderProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
   items       OrderItem[]
   transaction Transaction?
+  alerts      Alert[]
 
   @@map("orders")
 }
@@ -134,9 +106,9 @@ model OrderItem {
   orderId             String
   menuItemId          String
   quantity            Int
-  unitPrice           Decimal @db.Decimal(10, 2)
+  unitPrice           Float
   variation           String?
-  specialInstructions String? @db.Text
+  specialInstructions String?
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem MenuItem @relation(fields: [menuItemId], references: [id])
@@ -145,16 +117,52 @@ model OrderItem {
 }
 
 model Transaction {
-  id              String        @id @default(uuid())
-  orderId         String        @unique
+  id              String  @id @default(uuid())
+  orderId         String  @unique
   processedById   String?
-  amountPaid      Decimal       @db.Decimal(10, 2)
-  change          Decimal       @db.Decimal(10, 2)
-  paymentMethod   PaymentMethod
-  createdAt       DateTime      @default(now())
+  amountPaid      Float
+  change          Float
+  paymentMethod   String  // CASH, GCASH, CARD
+  createdAt       DateTime @default(now())
 
   order       Order @relation(fields: [orderId], references: [id])
   processedBy User? @relation("TransactionProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
 
   @@map("transactions")
+}
+
+model InventoryLog {
+  id              String   @id @default(uuid())
+  ingredientId    String
+  type            String   // RECEIVE, CONSUME, WASTE, ADJUSTMENT
+  quantityChanged Float
+  reason          String?
+  previousStock   Float
+  newStock        Float
+  recordedById    String?
+  createdAt       DateTime @default(now())
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  recordedBy User?      @relation("InventoryLogRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@map("inventory_logs")
+}
+
+model Alert {
+  id           String   @id @default(uuid())
+  type         String   // LOW_STOCK, CRITICAL_STOCK, EXPIRY_WARNING, EXPIRY_CRITICAL, ORDER_OVERDUE
+  title        String
+  description  String?
+  severity     String   @default("info") // info, warning, critical
+  ingredientId String?
+  orderId      String?
+  dismissed    Boolean  @default(false)
+  dismissedAt  DateTime?
+  dismissedBy  String?
+  createdAt    DateTime @default(now())
+
+  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  order      Order?      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("alerts")
 }
