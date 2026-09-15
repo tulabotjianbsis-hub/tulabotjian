@@ -15,9 +15,6 @@ export const authConfig: NextAuthConfig = {
                            nextUrl.pathname.startsWith("/alerts") ||
                            nextUrl.pathname.startsWith("/analytics") ||
                            nextUrl.pathname.startsWith("/recommendations");
-      const isCustomerRoute = nextUrl.pathname.startsWith("/cart") || 
-                             nextUrl.pathname.startsWith("/checkout") || 
-                             nextUrl.pathname.startsWith("/order");
 
       if (isAdminRoute) {
         if (isLoggedIn) return true;
@@ -28,14 +25,14 @@ export const authConfig: NextAuthConfig = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as any).role;
+        token.role = (user as { role?: string }).role;
       }
       return token;
     },
     async session({ session, token }) {
       if (token) {
         session.user.id = token.id as string;
-        (session.user as any).role = token.role;
+        (session.user as { role?: unknown }).role = token.role;
       }
       return session;
     },

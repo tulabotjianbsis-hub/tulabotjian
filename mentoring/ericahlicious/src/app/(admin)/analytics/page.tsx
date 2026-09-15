@@ -37,10 +37,10 @@ interface ProfitItem {
 }
 
 export default function AnalyticsPage() {
-  const [startDate, setStartDate] = useState(
+  const [startDate, setStartDate] = useState(() =>
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
   );
-  const [endDate, setEndDate] = useState(
+  const [endDate, setEndDate] = useState(() =>
     new Date().toISOString().split("T")[0]
   );
 
@@ -69,6 +69,7 @@ export default function AnalyticsPage() {
   }, [startDate, endDate]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAnalytics();
   }, [loadAnalytics]);
 

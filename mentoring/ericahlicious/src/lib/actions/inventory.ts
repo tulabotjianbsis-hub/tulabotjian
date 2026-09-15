@@ -1,13 +1,11 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { Prisma, AdjustmentType, IngredientStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+type AdjustmentType = "RECEIVE" | "CONSUME" | "WASTE" | "ADJUSTMENT";
+type IngredientStatus = "GOOD" | "LOW" | "CRITICAL" | "EXPIRED";
 import { auth } from "@/auth";
 
-const STOCK_THRESHOLDS = {
-  LOW_PERCENTAGE: 30, // 30% of initial stock
-  CRITICAL_PERCENTAGE: 20, // 20% of initial stock
-};
 
 export async function getIngredients(filters?: {
   category?: string;
@@ -16,7 +14,7 @@ export async function getIngredients(filters?: {
 }) {
   const where: Prisma.IngredientWhereInput = {
     ...(filters?.search && {
-      name: { contains: filters.search, mode: "insensitive" },
+      name: { contains: filters.search },
     }),
     ...(filters?.category && { category: filters.category }),
     ...(filters?.status && { status: filters.status }),
@@ -209,7 +207,7 @@ export async function calculateRecipeCost(menuItemId: string): Promise<number> {
 
   let totalCost = 0;
   for (const itemIngredient of menuItem.ingredients) {
-    const ingredient = itemIngredient.ingredient;
+
     // Simple cost calculation: assume price per unit is based on average
     // For MVP, we'll calculate: (stock * quantity) / quantity = per-unit cost estimate
     // In production, you'd have a separate cost_per_unit field

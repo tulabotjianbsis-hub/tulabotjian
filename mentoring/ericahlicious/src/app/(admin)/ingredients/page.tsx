@@ -6,7 +6,7 @@ import {
   getInventoryCategories,
   recordInventoryAdjustment,
 } from "@/lib/actions/inventory";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { IngredientForm } from "@/components/inventory/ingredient-form";
 
+
 interface Ingredient {
   id: string;
   name: string;
@@ -35,10 +36,12 @@ interface Ingredient {
   unit: string;
   supplier: string | null;
   expiryDate: Date | null;
-  status: IngredientStatus;
+  status: string;
 }
 
 export default function IngredientsPage() {
+  const [currentDate] = useState(() => new Date());
+  const [sevenDaysFromNow] = useState(() => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +77,7 @@ export default function IngredientsPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -93,7 +97,7 @@ export default function IngredientsPage() {
     try {
       await recordInventoryAdjustment({
         ingredientId: adjustmentItem.id,
-        type: adjustmentForm.type,
+        type: adjustmentForm.type as "RECEIVE" | "CONSUME" | "WASTE" | "ADJUSTMENT",
         quantityChanged: adjustmentForm.quantity,
         reason: adjustmentForm.reason || undefined,
       });
@@ -106,7 +110,7 @@ export default function IngredientsPage() {
     }
   };
 
-  const getStatusColor = (status: IngredientStatus) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "CRITICAL":
         return "destructive";
@@ -119,7 +123,7 @@ export default function IngredientsPage() {
     }
   };
 
-  const getStatusLabel = (status: IngredientStatus) => {
+  const getStatusLabel = (status: string) => {
     switch (status) {
       case "CRITICAL":
         return "🔴 Critical";
@@ -146,7 +150,7 @@ export default function IngredientsPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-48"
         />
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+        <Select value={selectedCategory} onValueChange={(value) => { if (value !== null) setSelectedCategory(value); }}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -159,7 +163,7 @@ export default function IngredientsPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+        <Select value={selectedStatus} onValueChange={(value) => { if (value !== null) setSelectedStatus(value); }}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -193,8 +197,8 @@ export default function IngredientsPage() {
           {filteredIngredients.map((item) => {
             const isExpiring =
               item.expiryDate &&
-              new Date(item.expiryDate) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) &&
-              new Date(item.expiryDate) > new Date();
+              new Date(item.expiryDate) < sevenDaysFromNow &&
+              new Date(item.expiryDate) > currentDate;
 
             return (
               <Card key={item.id} className="border-l-4 border-l-gray-300">
@@ -299,7 +303,7 @@ export default function IngredientsPage() {
                 category: editingItem.category,
                 stock: editingItem.stock,
                 unit: editingItem.unit,
-                supplier: editingItem.supplier,
+                supplier: editingItem.supplier ?? undefined,
                 expiryDate: editingItem.expiryDate?.toISOString().split("T")[0],
               }}
               categories={categories}

@@ -1,4 +1,4 @@
-import { Role } from "@prisma/client";
+type Role = "OWNER" | "ADMIN" | "SUPERVISOR";
 
 export const ROLE_LABELS: Record<Role, string> = {
   OWNER: "Owner",

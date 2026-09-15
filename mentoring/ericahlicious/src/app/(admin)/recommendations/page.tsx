@@ -4,14 +4,13 @@ import { useEffect, useState, useCallback } from "react";
 import { getRecommendations } from "@/lib/actions/analytics";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface Recommendation {
   type: string;
   severity: string;
   title: string;
   description: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 const getIcon = (type: string) => {
@@ -27,16 +26,6 @@ const getIcon = (type: string) => {
   }
 };
 
-const getSeverityColor = (severity: string) => {
-  switch (severity) {
-    case "critical":
-      return "destructive";
-    case "warning":
-      return "secondary";
-    default:
-      return "outline";
-  }
-};
 
 export default function RecommendationsPage() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
@@ -56,6 +45,7 @@ export default function RecommendationsPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadRecommendations();
     // Refresh every minute
     const interval = setInterval(loadRecommendations, 60000);
@@ -140,7 +130,7 @@ export default function RecommendationsPage() {
           <h2 className="text-lg font-semibold text-red-700">
             🔴 Critical Recommendations ({criticalRecs.length})
           </h2>
-          {criticalRecs.map((rec, idx) => {
+          {criticalRecs.map((rec) => {
             const recIdx = recommendations.indexOf(rec);
             return (
               <Card
@@ -197,7 +187,7 @@ export default function RecommendationsPage() {
           <h2 className="text-lg font-semibold text-orange-700">
             🟠 Warning Recommendations ({warningRecs.length})
           </h2>
-          {warningRecs.map((rec, idx) => {
+          {warningRecs.map((rec) => {
             const recIdx = recommendations.indexOf(rec);
             return (
               <Card
@@ -254,7 +244,7 @@ export default function RecommendationsPage() {
           <h2 className="text-lg font-semibold text-blue-700">
             ℹ️ Info Recommendations ({infoRecs.length})
           </h2>
-          {infoRecs.map((rec, idx) => {
+          {infoRecs.map((rec) => {
             const recIdx = recommendations.indexOf(rec);
             return (
               <Card
@@ -295,7 +285,7 @@ export default function RecommendationsPage() {
           <CardContent className="pt-12 pb-12 text-center">
             <p className="text-gray-500 text-lg">✓ No recommendations</p>
             <p className="text-gray-400 text-sm mt-2">
-              You're all set! New recommendations will appear as data patterns emerge.
+              You&apos;re all set! New recommendations will appear as data patterns emerge.
             </p>
           </CardContent>
         </Card>

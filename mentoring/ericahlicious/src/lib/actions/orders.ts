@@ -1,7 +1,9 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { OrderStatus, OrderType, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+type OrderStatus = "PENDING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
+type OrderType = "DINE_IN" | "TAKE_OUT";
 import { auth } from "@/auth";
 import { recordInventoryAdjustment } from "./inventory";
 
@@ -85,9 +87,14 @@ export async function createOrder(data: {
     });
   }
 
+  // Generate next order number
+  const orderCount = await db.order.count();
+  const orderNumber = orderCount + 1;
+
   // Create order
   const order = await db.order.create({
     data: {
+      orderNumber,
       type: data.type,
       status: "PENDING",
       totalAmount,

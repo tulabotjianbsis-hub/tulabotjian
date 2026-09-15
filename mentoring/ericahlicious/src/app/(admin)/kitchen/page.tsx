@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+
 interface OrderItem {
   id: string;
   quantity: number;
@@ -18,7 +19,7 @@ interface OrderItem {
 interface Order {
   id: string;
   orderNumber: number;
-  status: OrderStatus;
+  status: string;
   type: string;
   tableNumber: number | null;
   specialInstructions: string | null;
@@ -27,8 +28,14 @@ interface Order {
 }
 
 export default function KitchenDisplayPage() {
+  const [now, setNow] = useState(() => Date.now());
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const int = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(int);
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -42,6 +49,7 @@ export default function KitchenDisplayPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
     // Refresh every 5 seconds
     const interval = setInterval(loadData, 5000);
@@ -117,7 +125,7 @@ export default function KitchenDisplayPage() {
                           </CardTitle>
                           <p className="text-xs text-orange-700 mt-1">
                             {Math.round(
-                              (Date.now() - new Date(order.createdAt).getTime()) / 1000
+                              (now - new Date(order.createdAt).getTime()) / 1000
                             )}s ago
                           </p>
                         </div>
@@ -188,7 +196,7 @@ export default function KitchenDisplayPage() {
                           <p className="text-xs text-blue-700 mt-1">
                             Preparing for{" "}
                             {Math.round(
-                              (Date.now() - new Date(order.createdAt).getTime()) / 1000
+                              (now - new Date(order.createdAt).getTime()) / 1000
                             )}s
                           </p>
                         </div>

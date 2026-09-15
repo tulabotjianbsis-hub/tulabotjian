@@ -16,16 +16,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+
 import { createOrder } from "@/lib/actions/orders";
 
 const orderFormSchema = z.object({
   type: z.enum(["DINE_IN", "TAKE_OUT"]),
-  tableNumber: z.coerce.number().optional().nullable(),
+  tableNumber: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : Number(v)), z.number().optional()),
   items: z.array(
     z.object({
       menuItemId: z.string().min(1, "Item is required"),
-      quantity: z.coerce.number().min(1, "Quantity must be at least 1"),
+      quantity: z.preprocess((v) => Number(v), z.number().min(1, "Quantity must be at least 1")),
     })
   ),
   specialInstructions: z.string().optional(),
@@ -61,7 +61,8 @@ export function OrderForm({
     control,
     setValue,
   } = useForm<OrderFormData>({
-    resolver: zodResolver(orderFormSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(orderFormSchema) as any,
     defaultValues: {
       type: "DINE_IN",
       tableNumber: undefined,
@@ -75,6 +76,7 @@ export function OrderForm({
     name: "items",
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const watchType = watch("type");
   const watchItems = watch("items");
 
@@ -108,9 +110,9 @@ export function OrderForm({
       }
 
       await createOrder({
-        type: data.type as string,
+        type: data.type,
         items: validItems,
-        tableNumber: data.type === "DINE_IN" ? data.tableNumber : undefined,
+        tableNumber: data.type === "DINE_IN" ? (data.tableNumber ?? undefined) : undefined,
         specialInstructions: data.specialInstructions || undefined,
       });
 
@@ -121,7 +123,8 @@ export function OrderForm({
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-6">
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
           {error}
@@ -213,7 +216,7 @@ export function OrderForm({
                     <Select
                       value={watchItems[index]?.menuItemId || ""}
                       onValueChange={(value) =>
-                        setValue(`items.${index}.menuItemId`, value)
+                        value !== null && setValue(`items.${index}.menuItemId`, value)
                       }
                     >
                       <SelectTrigger>

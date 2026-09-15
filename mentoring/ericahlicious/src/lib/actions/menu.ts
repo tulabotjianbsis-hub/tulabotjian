@@ -11,8 +11,8 @@ export async function getMenuItems(filters?: {
   const where: Prisma.MenuItemWhereInput = {
     ...(filters?.search && {
       OR: [
-        { name: { contains: filters.search, mode: "insensitive" } },
-        { description: { contains: filters.search, mode: "insensitive" } },
+        { name: { contains: filters.search } },
+        { description: { contains: filters.search } },
       ],
     }),
     ...(filters?.category && { category: filters.category }),
@@ -74,11 +74,11 @@ export async function updateMenuItem(
   id: string,
   data: {
     name?: string;
-    description?: string;
+    description?: string | null;
     price?: number;
     category?: string;
-    imageUrl?: string;
-    promoPrice?: number;
+    imageUrl?: string | null;
+    promoPrice?: number | null;
     isArchived?: boolean;
   }
 ) {

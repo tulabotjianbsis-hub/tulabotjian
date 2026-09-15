@@ -4,11 +4,9 @@ import { useState, useCallback, useEffect } from "react";
 import {
   getIngredients,
   getInventoryLogs,
-  getInventoryCategories,
 } from "@/lib/actions/inventory";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+
 import {
   Select,
   SelectContent,
@@ -61,6 +59,7 @@ export default function AdjustmentsPage() {
   }, [selectedIngredient]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -121,7 +120,7 @@ export default function AdjustmentsPage() {
           <CardTitle className="text-base">Filter by Ingredient</CardTitle>
         </CardHeader>
         <CardContent>
-          <Select value={selectedIngredient} onValueChange={setSelectedIngredient}>
+          <Select value={selectedIngredient} onValueChange={(value) => { if (value !== null) setSelectedIngredient(value); }}>
             <SelectTrigger>
               <SelectValue placeholder="Select an ingredient to view adjustments" />
             </SelectTrigger>

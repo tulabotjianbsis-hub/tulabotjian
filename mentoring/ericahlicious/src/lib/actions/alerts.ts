@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { AlertType } from "@prisma/client";
+type AlertType = "LOW_STOCK" | "CRITICAL_STOCK" | "EXPIRY_WARNING" | "EXPIRY_CRITICAL" | "ORDER_OVERDUE";
 import { auth } from "@/auth";
 
 export async function getAlerts(dismissed = false) {

@@ -18,7 +18,7 @@ export default async function AdminLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const role = (session.user as any)?.role || "SUPERVISOR";
+  const role = (session.user as { role?: string })?.role || "SUPERVISOR";
   const userName = session.user.name || "User";
 
   return (
@@ -63,7 +63,7 @@ export default async function AdminLayout({
               </nav>
 
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+                <DropdownMenuTrigger>
                   <Button variant="outline" size="sm">
                     <span className="text-xs">
                       {userName} ({role})

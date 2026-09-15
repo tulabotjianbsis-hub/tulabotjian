@@ -20,10 +20,10 @@ import { createMenuItem, updateMenuItem } from "@/lib/actions/menu";
 const menuFormSchema = z.object({
   name: z.string().min(1, "Name is required").min(2, "Name must be at least 2 characters"),
   description: z.string().optional(),
-  price: z.coerce.number().min(0.01, "Price must be greater than 0"),
+  price: z.preprocess((v) => Number(v), z.number().min(0.01, "Price must be greater than 0")),
   category: z.string().min(1, "Category is required"),
   imageUrl: z.string().optional(),
-  promoPrice: z.coerce.number().optional().nullable(),
+  promoPrice: z.preprocess((v) => (v === "" || v === null || v === undefined ? undefined : Number(v)), z.number().optional()),
 });
 
 type MenuFormData = z.infer<typeof menuFormSchema>;
@@ -51,17 +51,19 @@ export function MenuForm({
     watch,
     setValue,
   } = useForm<MenuFormData>({
-    resolver: zodResolver(menuFormSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(menuFormSchema) as any,
     defaultValues: initialData || {
       name: "",
       description: "",
       price: 0,
       category: "",
       imageUrl: "",
-      promoPrice: null,
+      promoPrice: undefined,
     },
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const watchCategory = watch("category");
 
   const onSubmit = async (data: MenuFormData) => {
@@ -70,11 +72,11 @@ export function MenuForm({
       if (isEditing) {
         await updateMenuItem(initialData!.id!, {
           name: data.name,
-          description: data.description || null,
+          description: data.description ?? null,
           price: data.price,
           category: data.category,
-          imageUrl: data.imageUrl || null,
-          promoPrice: data.promoPrice || null,
+          imageUrl: data.imageUrl ?? null,
+          promoPrice: data.promoPrice ?? null,
         });
       } else {
         await createMenuItem(data);
@@ -86,7 +88,8 @@ export function MenuForm({
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
           {error}
@@ -152,7 +155,7 @@ export function MenuForm({
 
       <div className="space-y-2">
         <Label htmlFor="category">Category *</Label>
-        <Select value={watchCategory} onValueChange={(value) => setValue("category", value)}>
+        <Select value={watchCategory} onValueChange={(value) => { if (value !== null) setValue("category", value); }}>
           <SelectTrigger>
             <SelectValue placeholder="Select a category" />
           </SelectTrigger>

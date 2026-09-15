@@ -5,8 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   getMenuItemRecipe,
   calculateRecipeCost,
-  getMenuItems,
-  getIngredients,
   linkIngredientToMenuItem,
   unlinkIngredientFromMenuItem,
 } from "@/lib/actions/menu";
@@ -78,7 +76,7 @@ export default function MenuItemDetailPage() {
   const [selectedIngredient, setSelectedIngredient] = useState("");
   const [quantity, setQuantity] = useState("0");
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [recipeData, costData, ingredientsData] = await Promise.all([
@@ -94,11 +92,12 @@ export default function MenuItemDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [menuItemId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
-  }, [menuItemId]);
+  }, [loadData]);
 
   const handleAddIngredient = async () => {
     if (!selectedIngredient || Number(quantity) <= 0) return;
@@ -227,7 +226,7 @@ export default function MenuItemDetailPage() {
         <CardContent>
           {recipe.ingredients.length === 0 ? (
             <p className="text-center text-gray-500 py-4">
-              No ingredients added yet. Click "Add Ingredient" to start.
+              No ingredients added yet. Click &quot;Add Ingredient&quot; to start.
             </p>
           ) : (
             <div className="space-y-2">
@@ -274,7 +273,7 @@ export default function MenuItemDetailPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Ingredient *</Label>
-              <Select value={selectedIngredient} onValueChange={setSelectedIngredient}>
+              <Select value={selectedIngredient} onValueChange={(value) => { if (value !== null) setSelectedIngredient(value); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select ingredient" />
                 </SelectTrigger>

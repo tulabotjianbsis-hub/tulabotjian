@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default async function DashboardPage() {
   const session = await auth();
-  const role = (session?.user as any)?.role;
+  const role = (session?.user as { role?: string })?.role;
 
   if (role === "SUPERVISOR") {
     return <SupervisorDashboard />;
@@ -31,18 +31,7 @@ async function SupervisorDashboard() {
     (i) => i.expiryDate && i.expiryDate < new Date()
   );
 
-  const statusColor = (status: string) => {
-    switch (status) {
-      case "CRITICAL":
-        return "destructive";
-      case "LOW":
-        return "secondary";
-      case "EXPIRED":
-        return "default";
-      default:
-        return "outline";
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -60,7 +49,7 @@ async function SupervisorDashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
-              Today's Orders
+              Today&apos;s Orders
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -246,7 +235,7 @@ async function AdminDashboard() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">
-              Today's Orders
+              Today&apos;s Orders
             </CardTitle>
           </CardHeader>
           <CardContent>

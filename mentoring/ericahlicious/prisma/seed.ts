@@ -41,7 +41,7 @@ async function main() {
     },
   });
 
-  const owner = await prisma.user.create({
+  await prisma.user.create({
     data: {
       name: "Bob Owner",
       email: "owner@test.com",
@@ -465,7 +465,7 @@ async function main() {
       }
 
       // Current pending/preparing orders
-      const pendingOrder = await prisma.order.create({
+      await prisma.order.create({
         data: {
           type: "DINE_IN",
           status: "PENDING",
@@ -491,7 +491,7 @@ async function main() {
         },
       });
 
-      const preparingOrder = await prisma.order.create({
+      await prisma.order.create({
         data: {
           type: "DINE_IN",
           status: "PREPARING",
@@ -511,7 +511,7 @@ async function main() {
         },
       });
 
-      const readyOrder = await prisma.order.create({
+      await prisma.order.create({
         data: {
           type: "TAKE_OUT",
           status: "READY",

@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import { getAlerts, dismissAlert, checkAndCreateAlerts } from "@/lib/actions/alerts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface Alert {
   id: string;
@@ -35,16 +34,6 @@ const getAlertIcon = (type: string) => {
   }
 };
 
-const getSeverityColor = (severity: string) => {
-  switch (severity) {
-    case "critical":
-      return "destructive";
-    case "warning":
-      return "secondary";
-    default:
-      return "outline";
-  }
-};
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -66,6 +55,7 @@ export default function AlertsPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAlerts();
     // Refresh every 30 seconds
     const interval = setInterval(loadAlerts, 30000);

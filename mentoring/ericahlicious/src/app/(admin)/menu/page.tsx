@@ -63,6 +63,7 @@ export default function MenuPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -98,7 +99,7 @@ export default function MenuPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1"
         />
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+        <Select value={selectedCategory} onValueChange={(value) => { if (value !== null) setSelectedCategory(value); }}>
           <SelectTrigger className="w-48">
             <SelectValue />
           </SelectTrigger>
@@ -134,6 +135,7 @@ export default function MenuPage() {
             <Card key={item.id} className="flex flex-col">
               {item.imageUrl && (
                 <div className="w-full h-40 bg-gray-200 rounded-t overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={item.imageUrl}
                     alt={item.name}
@@ -230,11 +232,11 @@ export default function MenuPage() {
               initialData={{
                 id: editingItem.id,
                 name: editingItem.name,
-                description: editingItem.description,
+                description: editingItem.description ?? undefined,
                 price: editingItem.price,
                 category: editingItem.category,
-                imageUrl: editingItem.imageUrl,
-                promoPrice: editingItem.promoPrice,
+                imageUrl: editingItem.imageUrl ?? undefined,
+                promoPrice: editingItem.promoPrice ?? undefined,
               }}
               categories={categories}
               onSuccess={() => {
@@ -253,7 +255,7 @@ export default function MenuPage() {
           <DialogHeader>
             <DialogTitle>Delete Menu Item</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{deleteConfirmItem?.name}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{deleteConfirmItem?.name}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2 justify-end">

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { getOrders, getMenuItems, updateOrderStatus } from "@/lib/actions/orders";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getOrders, updateOrderStatus } from "@/lib/actions/orders";
+import { getMenuItems } from "@/lib/actions/menu";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -21,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { OrderForm } from "@/components/orders/order-form";
 
+type OrderStatus = "PENDING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
+
 interface OrderItem {
   id: string;
   quantity: number;
@@ -33,7 +36,7 @@ interface OrderItem {
 interface Order {
   id: string;
   orderNumber: number;
-  status: OrderStatus;
+  status: string;
   type: string;
   totalAmount: number;
   tableNumber: number | null;
@@ -74,6 +77,7 @@ export default function OrdersPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -118,7 +122,7 @@ export default function OrdersPage() {
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
-      await updateOrderStatus(orderId, newStatus);
+      await updateOrderStatus(orderId, newStatus as OrderStatus);
       await loadData();
     } catch (error) {
       console.error("Failed to update order status:", error);
@@ -144,7 +148,7 @@ export default function OrdersPage() {
       </div>
 
       <div className="flex gap-4">
-        <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+        <Select value={selectedStatus} onValueChange={(value) => { if (value !== null) setSelectedStatus(value); }}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -233,7 +237,7 @@ export default function OrdersPage() {
                         <Select
                           value={order.status}
                           onValueChange={(value) =>
-                            handleStatusChange(order.id, value as OrderStatus)
+                            value !== null && handleStatusChange(order.id, value as OrderStatus)
                           }
                         >
                           <SelectTrigger className="w-40">

@@ -19,7 +19,7 @@ import { createIngredient, updateIngredient } from "@/lib/actions/inventory";
 const ingredientFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   category: z.string().min(1, "Category is required"),
-  stock: z.coerce.number().min(0, "Stock must be non-negative"),
+  stock: z.preprocess((v) => Number(v), z.number().min(0, "Stock must be non-negative")),
   unit: z.string().min(1, "Unit is required"),
   supplier: z.string().optional(),
   expiryDate: z.string().optional(),
@@ -52,7 +52,8 @@ export function IngredientForm({
     watch,
     setValue,
   } = useForm<IngredientFormData>({
-    resolver: zodResolver(ingredientFormSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(ingredientFormSchema) as any,
     defaultValues: initialData || {
       name: "",
       category: "",
@@ -63,6 +64,7 @@ export function IngredientForm({
     },
   });
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const watchCategory = watch("category");
   const watchUnit = watch("unit");
 
@@ -96,7 +98,8 @@ export function IngredientForm({
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    <form onSubmit={handleSubmit(onSubmit as any)} className="space-y-4">
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
           {error}
@@ -118,7 +121,7 @@ export function IngredientForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="category">Category *</Label>
-          <Select value={watchCategory} onValueChange={(value) => setValue("category", value)}>
+          <Select value={watchCategory} onValueChange={(value) => { if (value !== null) setValue("category", value); }}>
             <SelectTrigger>
               <SelectValue placeholder="Select category" />
             </SelectTrigger>
@@ -146,7 +149,7 @@ export function IngredientForm({
 
         <div className="space-y-2">
           <Label htmlFor="unit">Unit *</Label>
-          <Select value={watchUnit} onValueChange={(value) => setValue("unit", value)}>
+          <Select value={watchUnit} onValueChange={(value) => { if (value !== null) setValue("unit", value); }}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
