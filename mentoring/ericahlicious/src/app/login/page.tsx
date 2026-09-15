@@ -22,7 +22,9 @@ export default function LoginPage() {
 
     const result = await loginWithCredentials(email, password);
     if (result.success) {
-      router.push("/dashboard");
+      const searchParams = new URLSearchParams(window.location.search);
+      const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+      router.push(callbackUrl);
     } else {
       setError(result.error || "Login failed");
     }
