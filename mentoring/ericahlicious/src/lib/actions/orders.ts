@@ -1,11 +1,18 @@
 "use server";
 
-import { db } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import {
+  MOCK_ORDERS,
+  MOCK_MENU_ITEMS,
+  MOCK_DAILY_ORDER_STATS,
+  type MockOrder,
+} from "@/lib/mock-data";
+
 type OrderStatus = "PENDING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
 type OrderType = "DINE_IN" | "TAKE_OUT";
-import { auth } from "@/auth";
-import { recordInventoryAdjustment } from "./inventory";
+
+// In-memory mutable store for demo purposes
+let orders: MockOrder[] = [...MOCK_ORDERS];
+let nextOrderNumber = 1006;
 
 export async function getOrders(filters?: {
   status?: OrderStatus;
@@ -13,177 +20,66 @@ export async function getOrders(filters?: {
   startDate?: Date;
   endDate?: Date;
 }) {
-  const where: Prisma.OrderWhereInput = {
-    ...(filters?.status && { status: filters.status }),
-    ...(filters?.type && { type: filters.type }),
-    ...(filters?.startDate || filters?.endDate) && {
-      createdAt: {
-        ...(filters?.startDate && { gte: filters.startDate }),
-        ...(filters?.endDate && { lte: filters.endDate }),
-      },
-    },
-  };
-
-  return db.order.findMany({
-    where,
-    include: {
-      items: {
-        include: {
-          menuItem: true,
-        },
-      },
-      processedBy: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  let result = [...orders];
+  if (filters?.status) result = result.filter((o) => o.status === filters.status);
+  if (filters?.type) result = result.filter((o) => o.type === filters.type);
+  return result.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
 export async function getOrderById(id: string) {
-  return db.order.findUnique({
-    where: { id },
-    include: {
-      items: {
-        include: {
-          menuItem: true,
-        },
-      },
-      processedBy: { select: { name: true } },
-      transaction: true,
-    },
-  });
+  return orders.find((o) => o.id === id) || null;
 }
 
 export async function createOrder(data: {
   type: OrderType;
-  items: Array<{
-    menuItemId: string;
-    quantity: number;
-    specialInstructions?: string;
-  }>;
+  items: Array<{ menuItemId: string; quantity: number; specialInstructions?: string }>;
   tableNumber?: number;
   specialInstructions?: string;
 }) {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error("Unauthorized");
-
-  // Calculate total amount
   let totalAmount = 0;
-  const orderItems = [];
-
-  for (const item of data.items) {
-    const menuItem = await db.menuItem.findUnique({
-      where: { id: item.menuItemId },
-    });
-    if (!menuItem) throw new Error(`Menu item ${item.menuItemId} not found`);
-
-    const itemTotal = Number(menuItem.price) * item.quantity;
-    totalAmount += itemTotal;
-
-    orderItems.push({
+  const items = data.items.map((item) => {
+    const menuItem = MOCK_MENU_ITEMS.find((m) => m.id === item.menuItemId);
+    const unitPrice = menuItem?.price || 0;
+    totalAmount += unitPrice * item.quantity;
+    return {
+      id: `oi-${Date.now()}-${item.menuItemId}`,
+      orderId: "",
       menuItemId: item.menuItemId,
       quantity: item.quantity,
-      unitPrice: menuItem.price,
+      unitPrice,
+      variation: null,
       specialInstructions: item.specialInstructions || null,
-    });
-  }
-
-  // Generate next order number
-  const orderCount = await db.order.count();
-  const orderNumber = orderCount + 1;
-
-  // Create order
-  const order = await db.order.create({
-    data: {
-      orderNumber,
-      type: data.type,
-      status: "PENDING",
-      totalAmount,
-      tableNumber: data.tableNumber || null,
-      specialInstructions: data.specialInstructions || null,
-      processedById: session.user.id,
-      items: {
-        create: orderItems,
-      },
-    },
-    include: {
-      items: {
-        include: {
-          menuItem: true,
-        },
-      },
-    },
+      menuItem: { name: menuItem?.name || "Unknown" },
+    };
   });
 
-  // Deduct ingredients from inventory
-  for (const item of data.items) {
-    const menuItem = await db.menuItem.findUnique({
-      where: { id: item.menuItemId },
-      include: {
-        ingredients: true,
-      },
-    });
+  const newOrder = {
+    id: `order-${Date.now()}`,
+    orderNumber: nextOrderNumber++,
+    type: data.type,
+    status: "PENDING" as const,
+    totalAmount,
+    tableNumber: data.tableNumber || null,
+    specialInstructions: data.specialInstructions || null,
+    qrToken: null,
+    processedById: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    processedBy: null,
+    items: items.map((i) => ({ ...i, orderId: `order-${Date.now()}` })),
+    transaction: null,
+    alerts: [],
+  };
 
-    if (menuItem?.ingredients) {
-      for (const ing of menuItem.ingredients) {
-        const deductQty = Number(ing.quantity) * item.quantity;
-        await recordInventoryAdjustment({
-          ingredientId: ing.ingredientId,
-          type: "CONSUME",
-          quantityChanged: deductQty,
-          reason: `Order #${order.orderNumber}`,
-        });
-      }
-    }
-  }
-
-  return order;
+  orders = [newOrder, ...orders];
+  return newOrder;
 }
 
-export async function updateOrderStatus(
-  orderId: string,
-  status: OrderStatus
-) {
-  const session = await auth();
-  if (!session?.user?.id) throw new Error("Unauthorized");
-
-  const order = await db.order.update({
-    where: { id: orderId },
-    data: { status },
-  });
-
-  // If order is cancelled, restore inventory
-  if (status === "CANCELLED") {
-    const orderDetails = await db.order.findUnique({
-      where: { id: orderId },
-      include: {
-        items: {
-          include: {
-            menuItem: {
-              include: {
-                ingredients: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (orderDetails?.items) {
-      for (const item of orderDetails.items) {
-        for (const ing of item.menuItem.ingredients) {
-          const restoreQty = Number(ing.quantity) * item.quantity;
-          await recordInventoryAdjustment({
-            ingredientId: ing.ingredientId,
-            type: "RECEIVE",
-            quantityChanged: restoreQty,
-            reason: `Order #${orderDetails.orderNumber} cancelled`,
-          });
-        }
-      }
-    }
-  }
-
-  return order;
+export async function updateOrderStatus(orderId: string, status: OrderStatus) {
+  orders = orders.map((o) =>
+    o.id === orderId ? { ...o, status, updatedAt: new Date() } : o
+  );
+  return orders.find((o) => o.id === orderId) || null;
 }
 
 export async function cancelOrder(orderId: string) {
@@ -191,48 +87,28 @@ export async function cancelOrder(orderId: string) {
 }
 
 export async function getKitchenOrders() {
-  return db.order.findMany({
-    where: {
-      status: {
-        in: ["PENDING", "PREPARING"],
-      },
-    },
-    include: {
-      items: {
-        include: {
-          menuItem: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  return orders
+    .filter((o) => o.status === "PENDING" || o.status === "PREPARING")
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 }
 
 export async function getDailyOrderStats() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const orders = await db.order.findMany({
-    where: {
-      createdAt: {
-        gte: today,
-        lt: tomorrow,
-      },
-    },
-  });
-
-  const stats = {
-    total: orders.length,
-    completed: orders.filter((o) => o.status === "COMPLETED").length,
-    pending: orders.filter((o) => o.status === "PENDING").length,
-    preparing: orders.filter((o) => o.status === "PREPARING").length,
-    ready: orders.filter((o) => o.status === "READY").length,
-    cancelled: orders.filter((o) => o.status === "CANCELLED").length,
-    totalAmount: orders.reduce((sum, o) => sum + Number(o.totalAmount), 0),
-  };
-
-  return stats;
+  const todayOrders = orders.filter((o) => o.createdAt >= today);
+  if (todayOrders.length > 0) {
+    return {
+      total: todayOrders.length,
+      pending: todayOrders.filter((o) => o.status === "PENDING").length,
+      preparing: todayOrders.filter((o) => o.status === "PREPARING").length,
+      ready: todayOrders.filter((o) => o.status === "READY").length,
+      completed: todayOrders.filter((o) => o.status === "COMPLETED").length,
+      cancelled: todayOrders.filter((o) => o.status === "CANCELLED").length,
+      totalAmount: todayOrders
+        .filter((o) => o.status === "COMPLETED")
+        .reduce((sum, o) => sum + o.totalAmount, 0),
+    };
+  }
+  // Fallback to static mock when no orders today
+  return MOCK_DAILY_ORDER_STATS;
 }
