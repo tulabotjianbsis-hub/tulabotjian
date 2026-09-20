@@ -7,19 +7,36 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const isAdminRoute = nextUrl.pathname.startsWith("/dashboard") || 
-                           nextUrl.pathname.startsWith("/menu") ||
-                           nextUrl.pathname.startsWith("/ingredients") ||
-                           nextUrl.pathname.startsWith("/orders") ||
-                           nextUrl.pathname.startsWith("/kitchen") ||
-                           nextUrl.pathname.startsWith("/alerts") ||
-                           nextUrl.pathname.startsWith("/analytics") ||
-                           nextUrl.pathname.startsWith("/recommendations");
+      const role = (auth?.user as { role?: string })?.role;
+      
+      const path = nextUrl.pathname;
+      
+      const isProtected = path.startsWith("/dashboard") || 
+                          path.startsWith("/menu") ||
+                          path.startsWith("/ingredients") ||
+                          path.startsWith("/orders") ||
+                          path.startsWith("/users") ||
+                          path.startsWith("/reports");
 
-      if (isAdminRoute) {
-        if (isLoggedIn) return true;
-        return false;
+      if (isProtected) {
+        if (!isLoggedIn) return false;
+        
+        // Role-based access control
+        if (path.startsWith("/users") || path.startsWith("/reports")) {
+          if (role !== "OWNER" && role !== "ADMIN") return false;
+        }
+        
+        if (path.startsWith("/ingredients")) {
+          if (role !== "OWNER" && role !== "SUPERVISOR") return false;
+        }
+        
+        if (path.startsWith("/orders")) {
+          if (role !== "OWNER" && role !== "SUPERVISOR") return false;
+        }
+        
+        return true;
       }
+      
       return true;
     },
     async jwt({ token, user }) {

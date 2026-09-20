@@ -1,14 +1,43 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { logout } from "@/lib/actions/auth";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import Link from "next/link";
+
+// Role-based navigation
+const NAV_BY_ROLE: Record<string, { href: string; label: string; icon: string }[]> = {
+  OWNER: [
+    { href: "/dashboard", label: "Dashboard", icon: "📊" },
+    { href: "/orders", label: "Order", icon: "📝" },
+    { href: "/users", label: "Users", icon: "👤" },
+    { href: "/menu", label: "Menu", icon: "☰" },
+    { href: "/ingredients", label: "Inventory", icon: "📦" },
+    { href: "/reports", label: "Reports", icon: "📈" },
+  ],
+  ADMIN: [
+    { href: "/dashboard", label: "Dashboard", icon: "📊" },
+    { href: "/users", label: "Users", icon: "👤" },
+    { href: "/menu", label: "Menu", icon: "☰" },
+    { href: "/reports", label: "Reports", icon: "📈" },
+  ],
+  SUPERVISOR: [
+    { href: "/dashboard", label: "Dashboard", icon: "📊" },
+    { href: "/orders", label: "Order", icon: "📝" },
+    { href: "/menu", label: "Menu", icon: "☰" },
+    { href: "/ingredients", label: "Inventory", icon: "📦" },
+  ],
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  OWNER: "Owner",
+  ADMIN: "Admin",
+  SUPERVISOR: "Supervisor",
+};
+
+const DASHBOARD_TITLE: Record<string, string> = {
+  OWNER: "Owner Dashboard",
+  ADMIN: "Admin Dashboard",
+  SUPERVISOR: "Supervisor Dashboard",
+};
 
 export default async function AdminLayout({
   children,
@@ -20,84 +49,61 @@ export default async function AdminLayout({
 
   const role = (session.user as { role?: string })?.role || "SUPERVISOR";
   const userName = session.user.name || "User";
+  const navItems = NAV_BY_ROLE[role] || NAV_BY_ROLE.SUPERVISOR;
+  const roleLabel = ROLE_LABELS[role] || role;
+  const dashTitle = DASHBOARD_TITLE[role] || "Dashboard";
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top Navigation */}
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link href="/dashboard" className="flex items-center gap-2">
-              <span className="text-2xl">☕</span>
-              <span className="font-bold text-lg text-gray-900">
-                Ericahlicious
-              </span>
-            </Link>
-
-            <div className="flex items-center gap-6">
-              <nav className="flex gap-6">
-                <Link
-                  href="/dashboard"
-                  className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  href="/menu"
-                  className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-                >
-                  Menu
-                </Link>
-                <Link
-                  href="/ingredients"
-                  className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-                >
-                  Inventory
-                </Link>
-                <Link
-                  href="/orders"
-                  className="text-gray-600 hover:text-gray-900 text-sm font-medium"
-                >
-                  Orders
-                </Link>
-              </nav>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger>
-                  <Button variant="outline" size="sm">
-                    <span className="text-xs">
-                      {userName} ({role})
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled className="text-xs">
-                    {session.user.email}
-                  </DropdownMenuItem>
-                  <form
-                    action={async () => {
-                      "use server";
-                      await logout();
-                    }}
-                  >
-                    <button
-                      type="submit"
-                      className="w-full text-left px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded"
-                    >
-                      Logout
-                    </button>
-                  </form>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+    <div className="admin-layout">
+      {/* ── Sidebar ──────────────────────────────────── */}
+      <aside className="sidebar">
+        {/* User info */}
+        <div className="sidebar-header">
+          <div className="sidebar-logo">E</div>
+          <div>
+            <div className="sidebar-user-name truncate" style={{ maxWidth: 130 }}>{userName}</div>
+            <div className="sidebar-user-role">{roleLabel}</div>
           </div>
         </div>
-      </nav>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
+        {/* Nav */}
+        <div className="sidebar-section-label">Management</div>
+        <nav className="sidebar-nav">
+          {navItems.map((item) => (
+            <Link key={item.href} href={item.href} className="sidebar-link">
+              <span style={{ fontSize: 16 }}>{item.icon}</span>
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      </aside>
+
+      {/* ── Main area ────────────────────────────────── */}
+      <div className="main-content">
+        {/* Topbar */}
+        <header className="topbar">
+          <div className="topbar-title">
+            <span style={{ fontSize: 18 }}>▦</span>
+            {dashTitle}
+          </div>
+          <form
+            action={async () => {
+              "use server";
+              await logout();
+            }}
+          >
+            <button type="submit" className="topbar-logout">
+              <span style={{ fontSize: 15 }}>↪</span>
+              Log Out
+            </button>
+          </form>
+        </header>
+
+        {/* Page content */}
+        <main className="page-content">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

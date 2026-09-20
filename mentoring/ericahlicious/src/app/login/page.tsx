@@ -1,103 +1,132 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { loginWithCredentials } from "@/lib/actions/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+const ROLES = [
+  { key: "SUPERVISOR", label: "Cashier", icon: "🖥️", email: "supervisor@test.com" },
+  { key: "SUPERVISOR2", label: "Supervisor", icon: "👤", email: "supervisor@test.com" },
+  { key: "ADMIN", label: "Admin/Management", icon: "⚙️", email: "manager@test.com" },
+  { key: "OWNER", label: "Owner", icon: "🏪", email: "owner@test.com" },
+];
 
 export default function LoginPage() {
   const router = useRouter();
+  const [step, setStep] = useState<"role" | "login">("role");
+  const [selectedRole, setSelectedRole] = useState<typeof ROLES[0] | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  function handleRoleSelect(role: typeof ROLES[0]) {
+    setSelectedRole(role);
+    setEmail(role.email);
+    setPassword("password");
     setError("");
-    setIsLoading(true);
+    setStep("login");
+  }
 
-    const result = await loginWithCredentials(email, password);
-    if (result.success) {
-      const searchParams = new URLSearchParams(window.location.search);
-      const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
-      router.push(callbackUrl);
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !password) return;
+    setLoading(true);
+    setError("");
+
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
+
+    setLoading(false);
+    if (result?.error) {
+      setError("Invalid username or password. Please try again.");
     } else {
-      setError(result.error || "Login failed");
+      router.push("/dashboard");
+      router.refresh();
     }
-
-    setIsLoading(false);
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-100 p-4">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold text-amber-900">
-            ☕ Ericahlicious
-          </CardTitle>
-          <CardDescription>Brew & Bake Management System</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="supervisor@ericahlicious.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
+    <div className="login-page">
+      <div className="login-card">
+        {/* Logo */}
+        <div className="login-logo-wrap">
+          <div className="login-logo">E</div>
+          <div className="login-brand-name">ERICAHLICIOUS Management System</div>
+        </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={isLoading}
-              />
+        {step === "role" ? (
+          /* ── Step 1: Role Selection ── */
+          <>
+            <div className="login-subtitle">Select your role</div>
+            <div className="role-grid">
+              {ROLES.map((role) => (
+                <button
+                  key={role.key + role.label}
+                  className="role-btn"
+                  onClick={() => handleRoleSelect(role)}
+                  type="button"
+                >
+                  <span className="role-icon">{role.icon}</span>
+                  {role.label}
+                </button>
+              ))}
             </div>
+          </>
+        ) : (
+          /* ── Step 2: Login Form ── */
+          <>
+            <button
+              type="button"
+              className="login-back-btn"
+              onClick={() => { setStep("role"); setError(""); }}
+            >
+              ← Back
+            </button>
+            <div className="login-subtitle">{selectedRole?.label}</div>
 
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                {error}
+            <form className="login-form" onSubmit={handleLogin}>
+              {error && <div className="form-error">{error}</div>}
+              <div className="form-group">
+                <label className="form-label" htmlFor="email">Username</label>
+                <input
+                  id="email"
+                  type="email"
+                  className="form-input"
+                  placeholder="Enter username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  required
+                />
               </div>
-            )}
-
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Signing in..." : "Sign In"}
-            </Button>
-
-            <div className="pt-4 border-t">
-              <p className="text-xs text-gray-600 text-center mb-3 font-semibold">
-                Test Credentials:
-              </p>
-              <div className="space-y-1 text-xs text-gray-600">
-                <p>
-                  <span className="font-semibold">Supervisor:</span> supervisor@test.com / password
-                </p>
-                <p>
-                  <span className="font-semibold">Manager:</span> manager@test.com / password
-                </p>
-                <p>
-                  <span className="font-semibold">Owner:</span> owner@test.com / password
-                </p>
+              <div className="form-group">
+                <label className="form-label" htmlFor="password">Password</label>
+                <input
+                  id="password"
+                  type="password"
+                  className="form-input"
+                  placeholder="Enter password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
               </div>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+              <button
+                type="submit"
+                className="btn-login"
+                disabled={loading}
+              >
+                {loading ? "Signing in…" : "Sign In"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
     </div>
   );
 }
