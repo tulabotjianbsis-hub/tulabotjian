@@ -74,12 +74,12 @@ export function MenuForm({
           name: data.name,
           description: data.description ?? null,
           price: data.price,
-          category: data.category,
+          categoryId: data.category,
           imageUrl: data.imageUrl ?? null,
           promoPrice: data.promoPrice ?? null,
         });
       } else {
-        await createMenuItem(data);
+        await createMenuItem({ ...data, categoryId: data.category });
       }
       onSuccess();
     } catch (err) {

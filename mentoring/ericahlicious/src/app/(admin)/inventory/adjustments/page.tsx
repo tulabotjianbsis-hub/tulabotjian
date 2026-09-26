@@ -45,11 +45,11 @@ export default function AdjustmentsPage() {
     setLoading(true);
     try {
       const ingredientsData = await getIngredients();
-      setIngredients(ingredientsData);
+      setIngredients(ingredientsData as any);
       
       if (selectedIngredient) {
         const logsData = await getInventoryLogs(selectedIngredient);
-        setLogs(logsData);
+        setLogs(logsData as any);
       }
     } catch (error) {
       console.error("Failed to load data:", error);

@@ -2,256 +2,121 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import {
-  getMenuItemRecipe,
-  calculateRecipeCost,
-  linkIngredientToMenuItem,
-  unlinkIngredientFromMenuItem,
-} from "@/lib/actions/menu";
+import { getMenuItemById, linkIngredientToMenuItem, unlinkIngredientFromMenuItem } from "@/lib/actions/menu";
 import { getIngredients as getAllIngredients } from "@/lib/actions/inventory";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-
-interface Recipe {
-  id: string;
-  name: string;
-  price: number;
-  promoPrice: number | null;
-  ingredients: Array<{
-    id: string;
-    name: string;
-    quantity: number;
-    unit: string;
-    currentStock: number;
-  }>;
-}
-
-interface Ingredient {
-  id: string;
-  name: string;
-  category: string;
-  stock: number;
-  unit: string;
-}
-
-interface RecipeCost {
-  totalCost: number;
-  breakdown: Array<{
-    name: string;
-    quantity: number;
-    unit: string;
-    cost: number;
-  }>;
-  margin: number;
-  marginPercent: number;
-}
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export default function MenuItemDetailPage() {
   const params = useParams();
   const router = useRouter();
   const menuItemId = params.id as string;
 
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [cost, setCost] = useState<RecipeCost | null>(null);
+  const [item, setItem] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [ingredients, setIngredients] = useState<any[]>([]);
   const [isAddingIngredient, setIsAddingIngredient] = useState(false);
   const [selectedIngredient, setSelectedIngredient] = useState("");
   const [quantity, setQuantity] = useState("0");
+  const [unit, setUnit] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [recipeData, costData, ingredientsData] = await Promise.all([
-        getMenuItemRecipe(menuItemId),
-        calculateRecipeCost(menuItemId),
+      const [itemData, ingredientsData] = await Promise.all([
+        getMenuItemById(menuItemId),
         getAllIngredients(),
       ]);
-      setRecipe(recipeData);
-      setCost(costData);
+      setItem(itemData);
       setIngredients(ingredientsData);
     } catch (error) {
-      console.error("Failed to load recipe:", error);
+      console.error("Failed to load item:", error);
     } finally {
       setLoading(false);
     }
   }, [menuItemId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
   const handleAddIngredient = async () => {
     if (!selectedIngredient || Number(quantity) <= 0) return;
-
-    try {
-      const ing = ingredients.find((i) => i.id === selectedIngredient);
-      if (!ing) return;
-
-      await linkIngredientToMenuItem(
-        menuItemId,
-        selectedIngredient,
-        Number(quantity),
-        ing.unit
-      );
-
-      setSelectedIngredient("");
-      setQuantity("0");
-      setIsAddingIngredient(false);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to add ingredient:", error);
-    }
+    const ing = ingredients.find((i) => i.id === selectedIngredient);
+    await linkIngredientToMenuItem(menuItemId, selectedIngredient, Number(quantity), unit || ing?.unit || "g");
+    setSelectedIngredient("");
+    setQuantity("0");
+    setUnit("");
+    setIsAddingIngredient(false);
+    await loadData();
   };
 
   const handleRemoveIngredient = async (ingredientId: string) => {
-    try {
-      await unlinkIngredientFromMenuItem(menuItemId, ingredientId);
-      await loadData();
-    } catch (error) {
-      console.error("Failed to remove ingredient:", error);
-    }
+    await unlinkIngredientFromMenuItem(menuItemId, ingredientId);
+    await loadData();
   };
 
-  if (loading) {
-    return <p className="text-center text-gray-500 py-8">Loading recipe...</p>;
-  }
+  if (loading) return <p className="text-center py-8">Loading...</p>;
+  if (!item) return <p className="text-center py-8">Menu item not found</p>;
 
-  if (!recipe) {
-    return <p className="text-center text-gray-500 py-8">Recipe not found</p>;
-  }
-
-  const selectedIngredientData = ingredients.find((i) => i.id === selectedIngredient);
+  const selectedIngData = ingredients.find((i) => i.id === selectedIngredient);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="outline" onClick={() => router.back()}>
-          ← Back
-        </Button>
+        <Button variant="outline" onClick={() => router.back()}>← Back</Button>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{recipe.name}</h1>
+          <h1 className="text-3xl font-bold text-gray-900">{item.name}</h1>
           <p className="text-gray-600 mt-1">Manage recipe and ingredients</p>
         </div>
       </div>
 
-      {/* Menu Item Info */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Menu Item Details</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-base">Menu Item Details</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           <div className="flex justify-between">
             <span className="text-gray-600">Price:</span>
-            <span className="font-semibold">${recipe.price.toFixed(2)}</span>
+            <span className="font-semibold">₱{Number(item.price).toFixed(2)}</span>
           </div>
-          {recipe.promoPrice && (
+          {item.promoPrice && (
             <div className="flex justify-between">
               <span className="text-gray-600">Promo Price:</span>
-              <span className="font-semibold text-red-600">
-                ${recipe.promoPrice.toFixed(2)}
-              </span>
+              <span className="font-semibold text-red-600">₱{Number(item.promoPrice).toFixed(2)}</span>
             </div>
           )}
+          <div className="flex justify-between">
+            <span className="text-gray-600">Category:</span>
+            <span className="font-semibold">{item.category?.name}</span>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Cost Breakdown */}
-      {cost && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Profitability Analysis</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex justify-between items-center p-3 bg-blue-50 rounded">
-              <span className="text-gray-700">Total Cost:</span>
-              <span className="text-lg font-bold">${cost.totalCost.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-green-50 rounded">
-              <span className="text-gray-700">Profit Margin:</span>
-              <span className="text-lg font-bold text-green-600">
-                ${cost.margin.toFixed(2)} ({cost.marginPercent.toFixed(0)}%)
-              </span>
-            </div>
-
-            {cost.breakdown.length > 0 && (
-              <div className="mt-4">
-                <h4 className="font-semibold text-sm mb-2">Cost Breakdown:</h4>
-                <div className="space-y-1 text-sm">
-                  {cost.breakdown.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-gray-700">
-                      <span>
-                        {item.name} ({item.quantity} {item.unit})
-                      </span>
-                      <span>${item.cost.toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recipe Ingredients */}
       <Card>
         <CardHeader className="flex justify-between items-center">
           <CardTitle className="text-base">Recipe Ingredients</CardTitle>
-          <Button
-            size="sm"
-            onClick={() => setIsAddingIngredient(true)}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
+          <Button size="sm" onClick={() => setIsAddingIngredient(true)} className="bg-blue-600 hover:bg-blue-700">
             + Add Ingredient
           </Button>
         </CardHeader>
         <CardContent>
-          {recipe.ingredients.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">
-              No ingredients added yet. Click &quot;Add Ingredient&quot; to start.
-            </p>
+          {item.ingredients.length === 0 ? (
+            <p className="text-center text-gray-500 py-4">No ingredients added yet.</p>
           ) : (
             <div className="space-y-2">
-              {recipe.ingredients.map((ing) => (
-                <div
-                  key={ing.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded border"
-                >
+              {item.ingredients.map((ing: any) => (
+                <div key={ing.id} className="flex items-center justify-between p-3 bg-gray-50 rounded border">
                   <div>
-                    <h4 className="font-semibold">{ing.name}</h4>
-                    <p className="text-sm text-gray-600">
-                      {ing.quantity} {ing.unit}
-                    </p>
+                    <h4 className="font-semibold">{ing.ingredient.name}</h4>
+                    <p className="text-sm text-gray-600">{Number(ing.quantity)} {ing.unit}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Badge variant="outline">
-                      Stock: {ing.currentStock.toFixed(2)} {ing.unit}
-                    </Badge>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleRemoveIngredient(ing.id)}
-                    >
-                      Remove
-                    </Button>
+                    <Badge variant="outline">Stock: {Number(ing.ingredient.stock)} {ing.ingredient.unit}</Badge>
+                    <Button variant="destructive" size="sm" onClick={() => handleRemoveIngredient(ing.ingredientId)}>Remove</Button>
                   </div>
                 </div>
               ))}
@@ -260,68 +125,36 @@ export default function MenuItemDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Add Ingredient Dialog */}
       <Dialog open={isAddingIngredient} onOpenChange={setIsAddingIngredient}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Add Ingredient to Recipe</DialogTitle>
-            <DialogDescription>
-              Select an ingredient and specify the quantity needed
-            </DialogDescription>
+            <DialogDescription>Select an ingredient and specify the quantity needed</DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Ingredient *</Label>
-              <Select value={selectedIngredient} onValueChange={(value) => { if (value !== null) setSelectedIngredient(value); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select ingredient" />
-                </SelectTrigger>
+              <Select value={selectedIngredient} onValueChange={(v) => setSelectedIngredient(v || "")}>
+                <SelectTrigger><SelectValue placeholder="Select ingredient" /></SelectTrigger>
                 <SelectContent className="max-h-60">
                   {ingredients.map((ing) => (
                     <SelectItem key={ing.id} value={ing.id}>
-                      {ing.name} ({ing.stock} {ing.unit})
+                      {ing.name} ({Number(ing.stock)} {ing.unit})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="quantity">Quantity *</Label>
+              <Label>Quantity *</Label>
               <div className="flex gap-2">
-                <Input
-                  id="quantity"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  className="flex-1"
-                />
-                {selectedIngredientData && (
-                  <span className="flex items-center text-sm text-gray-600 px-2 py-1 bg-gray-100 rounded">
-                    {selectedIngredientData.unit}
-                  </span>
-                )}
+                <Input type="number" step="0.01" min="0" placeholder="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} className="flex-1" />
+                <Input placeholder={selectedIngData?.unit ?? "unit"} value={unit} onChange={(e) => setUnit(e.target.value)} style={{ width: 80 }} />
               </div>
             </div>
-
             <div className="flex gap-2 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setIsAddingIngredient(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleAddIngredient}
-                disabled={!selectedIngredient || Number(quantity) <= 0}
-                className="bg-blue-600 hover:bg-blue-700"
-              >
-                Add
-              </Button>
+              <Button variant="outline" onClick={() => setIsAddingIngredient(false)}>Cancel</Button>
+              <Button onClick={handleAddIngredient} disabled={!selectedIngredient || Number(quantity) <= 0} className="bg-blue-600 hover:bg-blue-700">Add</Button>
             </div>
           </div>
         </DialogContent>

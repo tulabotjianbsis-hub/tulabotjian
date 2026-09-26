@@ -10,7 +10,6 @@ interface Recommendation {
   severity: string;
   title: string;
   description: string;
-  data: Record<string, unknown>;
 }
 
 const getIcon = (type: string) => {

@@ -1,15 +1,8 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
-
-// ---------------------------------------------------------------------------
-// Mock users — replace this with real DB lookup when Aiven MySQL is ready
-// ---------------------------------------------------------------------------
-const MOCK_USERS = [
-  { id: "1", name: "Supervisor",  email: "supervisor@test.com", password: "password", role: "SUPERVISOR" },
-  { id: "2", name: "Manager",     email: "manager@test.com",    password: "password", role: "ADMIN" },
-  { id: "3", name: "Owner",       email: "owner@test.com",      password: "password", role: "OWNER" },
-];
+import { db } from "@/lib/db";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -17,24 +10,38 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     CredentialsProvider({
       name: "credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        email:    { label: "Email",    type: "email"    },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = MOCK_USERS.find(
-          (u) => u.email === (credentials.email as string)
-        );
+        // Look up user in the real MySQL database
+        const user = await db.user.findUnique({
+          where: { email: credentials.email as string },
+        });
 
         if (!user) return null;
-        if (user.password !== (credentials.password as string)) return null;
+        if (user.status === "ARCHIVED") return null;
+
+        // Compare bcrypt hashed password
+        const passwordMatch = await bcrypt.compare(
+          credentials.password as string,
+          user.password
+        );
+        if (!passwordMatch) return null;
+
+        // Update lastActive timestamp
+        await db.user.update({
+          where: { id: user.id },
+          data: { lastActive: new Date() },
+        });
 
         return {
-          id: user.id,
-          name: user.name,
+          id:    user.id,
+          name:  user.name,
           email: user.email,
-          role: user.role,
+          role:  user.role,
         };
       },
     }),

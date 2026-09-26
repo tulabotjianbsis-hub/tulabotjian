@@ -1,5 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// This is your Prisma schema file
+// Backend: MySQL on Aiven Cloud
 
 generator client {
   provider      = "prisma-client-js"
@@ -7,139 +7,133 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id           String   @id @default(uuid())
-  name         String
-  email        String   @unique
-  password     String
-  role         String   // OWNER, ADMIN, SUPERVISOR
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+// ─── Users ───────────────────────────────────────────────────────────────────
 
-  // Relations
-  ingredientsUpdated Ingredient[]  @relation("IngredientUpdatedBy")
-  ordersProcessed    Order[]       @relation("OrderProcessedBy")
-  transactions       Transaction[] @relation("TransactionProcessedBy")
+model User {
+  id         String     @id @default(cuid())
+  name       String
+  email      String     @unique
+  password   String
+  role       Role
+  status     UserStatus @default(ACTIVE)
+  lastActive DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  ingredientsUpdated Ingredient[]   @relation("IngredientUpdatedBy")
+  ordersProcessed    Order[]        @relation("OrderProcessedBy")
   inventoryLogs      InventoryLog[] @relation("InventoryLogRecordedBy")
 
   @@map("users")
 }
 
-model MenuItem {
-  id          String   @id @default(uuid())
-  name        String
-  description String?
-  price       Float
-  category    String
-  imageUrl    String?
-  isArchived  Boolean  @default(false)
-  promoPrice  Float?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+enum Role {
+  OWNER
+  ADMIN
+  SUPERVISOR
+}
 
-  // Relations
+enum UserStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// ─── Menu ─────────────────────────────────────────────────────────────────────
+
+model MenuCategory {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  items     MenuItem[]
+  createdAt DateTime   @default(now())
+
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id          String         @id @default(cuid())
+  name        String
+  description String?        @db.Text
+  price       Decimal        @db.Decimal(10, 2)
+  imageUrl    String?
+  categoryId  String
+  category    MenuCategory   @relation(fields: [categoryId], references: [id])
+  status      MenuItemStatus @default(ACTIVE)
+  promoPrice  Decimal?       @db.Decimal(10, 2)
   ingredients MenuItemIngredient[]
   orderItems  OrderItem[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   @@map("menu_items")
 }
 
+enum MenuItemStatus {
+  ACTIVE
+  ARCHIVED
+}
+
 model MenuItemIngredient {
-  id           String  @id @default(uuid())
+  id           String     @id @default(cuid())
   menuItemId   String
   ingredientId String
-  quantity     Float
+  quantity     Decimal    @db.Decimal(10, 3)
   unit         String
 
   menuItem   MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 
+  @@unique([menuItemId, ingredientId])
   @@map("menu_item_ingredients")
 }
 
-model Ingredient {
-  id        String   @id @default(uuid())
-  name      String
-  category  String
-  stock     Float
-  unit      String
-  supplier  String?
-  expiryDate DateTime?
-  status    String   @default("GOOD") // GOOD, LOW, CRITICAL, EXPIRED
-  updatedById String?
-  updatedAt DateTime @updatedAt
+// ─── Inventory ────────────────────────────────────────────────────────────────
 
-  updatedBy    User?                @relation("IngredientUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  menuItems    MenuItemIngredient[]
-  logs         InventoryLog[]
-  alerts       Alert[]
+model InventoryCategory {
+  id    String      @id @default(cuid())
+  name  String      @unique
+  items Ingredient[]
+
+  @@map("inventory_categories")
+}
+
+model Ingredient {
+  id          String             @id @default(cuid())
+  name        String
+  categoryId  String
+  category    InventoryCategory  @relation(fields: [categoryId], references: [id])
+  stock       Decimal            @db.Decimal(10, 3)
+  unit        String
+  supplier    String?
+  expiryDate  DateTime?
+  status      StockStatus        @default(GOOD)
+  updatedById String?
+  updatedBy   User?              @relation("IngredientUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  menuItems   MenuItemIngredient[]
+  logs        InventoryLog[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
 
   @@map("ingredients")
 }
 
-model Order {
-  id                  String   @id @default(uuid())
-  orderNumber         Int      @unique
-  type                String   // DINE_IN, TAKE_OUT
-  status              String   @default("PENDING") // PENDING, PREPARING, READY, COMPLETED, CANCELLED
-  totalAmount         Float
-  qrToken             String?
-  processedById       String?
-  tableNumber         Int?
-  specialInstructions String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  processedBy User?       @relation("OrderProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
-  items       OrderItem[]
-  transaction Transaction?
-  alerts      Alert[]
-
-  @@map("orders")
-}
-
-model OrderItem {
-  id                  String  @id @default(uuid())
-  orderId             String
-  menuItemId          String
-  quantity            Int
-  unitPrice           Float
-  variation           String?
-  specialInstructions String?
-
-  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
-
-  @@map("order_items")
-}
-
-model Transaction {
-  id              String  @id @default(uuid())
-  orderId         String  @unique
-  processedById   String?
-  amountPaid      Float
-  change          Float
-  paymentMethod   String  // CASH, GCASH, CARD
-  createdAt       DateTime @default(now())
-
-  order       Order @relation(fields: [orderId], references: [id])
-  processedBy User? @relation("TransactionProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
-
-  @@map("transactions")
+enum StockStatus {
+  GOOD
+  LOW
+  CRITICAL
 }
 
 model InventoryLog {
-  id              String   @id @default(uuid())
+  id              String   @id @default(cuid())
   ingredientId    String
   type            String   // RECEIVE, CONSUME, WASTE, ADJUSTMENT
-  quantityChanged Float
+  quantityChanged Decimal  @db.Decimal(10, 3)
   reason          String?
-  previousStock   Float
-  newStock        Float
+  previousStock   Decimal  @db.Decimal(10, 3)
+  newStock        Decimal  @db.Decimal(10, 3)
   recordedById    String?
   createdAt       DateTime @default(now())
 
@@ -149,21 +143,62 @@ model InventoryLog {
   @@map("inventory_logs")
 }
 
-model Alert {
-  id           String   @id @default(uuid())
-  type         String   // LOW_STOCK, CRITICAL_STOCK, EXPIRY_WARNING, EXPIRY_CRITICAL, ORDER_OVERDUE
-  title        String
-  description  String?
-  severity     String   @default("info") // info, warning, critical
-  ingredientId String?
-  orderId      String?
-  dismissed    Boolean  @default(false)
-  dismissedAt  DateTime?
-  dismissedBy  String?
-  createdAt    DateTime @default(now())
+// ─── Orders ───────────────────────────────────────────────────────────────────
 
-  ingredient Ingredient? @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
-  order      Order?      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+model Order {
+  id             String      @id @default(cuid())
+  orderNumber    Int         @unique @default(autoincrement())
+  tableNumber    String?
+  status         OrderStatus @default(PENDING)
+  source         OrderSource @default(CUSTOMER_QR)
+  totalAmount    Decimal     @db.Decimal(10, 2)
+  qrToken        String?     @unique
+  processedById  String?
+  processedBy    User?       @relation("OrderProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
+  items          OrderItem[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
-  @@map("alerts")
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderSource {
+  CUSTOMER_QR
+  POS
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  unitPrice  Decimal  @db.Decimal(10, 2)
+  subtotal   Decimal  @db.Decimal(10, 2)
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@map("order_items")
+}
+
+// ─── Daily Reports ────────────────────────────────────────────────────────────
+
+model DailyReport {
+  id            String   @id @default(cuid())
+  date          DateTime @unique @db.Date
+  totalRevenue  Decimal  @db.Decimal(10, 2)
+  totalExpenses Decimal  @db.Decimal(10, 2)
+  netProfit     Decimal  @db.Decimal(10, 2)
+  totalOrders   Int
+  createdAt     DateTime @default(now())
+
+  @@map("daily_reports")
 }

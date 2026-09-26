@@ -1,114 +1,148 @@
 "use server";
 
-import {
-  MOCK_ORDERS,
-  MOCK_MENU_ITEMS,
-  MOCK_DAILY_ORDER_STATS,
-  type MockOrder,
-} from "@/lib/mock-data";
+import { db } from "@/lib/db";
+import { auth } from "@/auth";
+import { revalidatePath } from "next/cache";
 
-type OrderStatus = "PENDING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED";
-type OrderType = "DINE_IN" | "TAKE_OUT";
-
-// In-memory mutable store for demo purposes
-let orders: MockOrder[] = [...MOCK_ORDERS];
-let nextOrderNumber = 1006;
+// ─────────────────────────────────────────────────────────────────────────────
+// READ
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getOrders(filters?: {
-  status?: OrderStatus;
-  type?: OrderType;
+  status?: string;
+  source?: string;
   startDate?: Date;
   endDate?: Date;
 }) {
-  let result = [...orders];
-  if (filters?.status) result = result.filter((o) => o.status === filters.status);
-  if (filters?.type) result = result.filter((o) => o.type === filters.type);
-  return result.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  return db.order.findMany({
+    where: {
+      status: (filters?.status as any) || undefined,
+      source: (filters?.source as any) || undefined,
+      createdAt: filters?.startDate ? { gte: filters.startDate, lte: filters.endDate } : undefined,
+    },
+    include: {
+      items: { include: { menuItem: { select: { name: true, imageUrl: true } } } },
+      processedBy: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 export async function getOrderById(id: string) {
-  return orders.find((o) => o.id === id) || null;
-}
-
-export async function createOrder(data: {
-  type: OrderType;
-  items: Array<{ menuItemId: string; quantity: number; specialInstructions?: string }>;
-  tableNumber?: number;
-  specialInstructions?: string;
-}) {
-  let totalAmount = 0;
-  const items = data.items.map((item) => {
-    const menuItem = MOCK_MENU_ITEMS.find((m) => m.id === item.menuItemId);
-    const unitPrice = menuItem?.price || 0;
-    totalAmount += unitPrice * item.quantity;
-    return {
-      id: `oi-${Date.now()}-${item.menuItemId}`,
-      orderId: "",
-      menuItemId: item.menuItemId,
-      quantity: item.quantity,
-      unitPrice,
-      variation: null,
-      specialInstructions: item.specialInstructions || null,
-      menuItem: { name: menuItem?.name || "Unknown" },
-    };
+  return db.order.findUnique({
+    where: { id },
+    include: {
+      items: { include: { menuItem: true } },
+      processedBy: { select: { id: true, name: true } },
+    },
   });
-
-  const newOrder = {
-    id: `order-${Date.now()}`,
-    orderNumber: nextOrderNumber++,
-    type: data.type,
-    status: "PENDING" as const,
-    totalAmount,
-    tableNumber: data.tableNumber || null,
-    specialInstructions: data.specialInstructions || null,
-    qrToken: null,
-    processedById: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    processedBy: null,
-    items: items.map((i) => ({ ...i, orderId: `order-${Date.now()}` })),
-    transaction: null,
-    alerts: [],
-  };
-
-  orders = [newOrder, ...orders];
-  return newOrder;
-}
-
-export async function updateOrderStatus(orderId: string, status: OrderStatus) {
-  orders = orders.map((o) =>
-    o.id === orderId ? { ...o, status, updatedAt: new Date() } : o
-  );
-  return orders.find((o) => o.id === orderId) || null;
-}
-
-export async function cancelOrder(orderId: string) {
-  return updateOrderStatus(orderId, "CANCELLED");
 }
 
 export async function getKitchenOrders() {
-  return orders
-    .filter((o) => o.status === "PENDING" || o.status === "PREPARING")
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return db.order.findMany({
+    where: { status: { in: ["PENDING", "PREPARING"] } },
+    include: {
+      items: { include: { menuItem: { select: { name: true } } } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
 }
 
 export async function getDailyOrderStats() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayOrders = orders.filter((o) => o.createdAt >= today);
-  if (todayOrders.length > 0) {
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const [total, pending, preparing, ready, completed, cancelled, revenueResult] =
+    await Promise.all([
+      db.order.count({ where: { createdAt: { gte: today, lt: tomorrow } } }),
+      db.order.count({ where: { status: "PENDING",    createdAt: { gte: today, lt: tomorrow } } }),
+      db.order.count({ where: { status: "PREPARING",  createdAt: { gte: today, lt: tomorrow } } }),
+      db.order.count({ where: { status: "READY",      createdAt: { gte: today, lt: tomorrow } } }),
+      db.order.count({ where: { status: "COMPLETED",  createdAt: { gte: today, lt: tomorrow } } }),
+      db.order.count({ where: { status: "CANCELLED",  createdAt: { gte: today, lt: tomorrow } } }),
+      db.order.aggregate({
+        where: { status: "COMPLETED", createdAt: { gte: today, lt: tomorrow } },
+        _sum: { totalAmount: true },
+      }),
+    ]);
+
+  return {
+    total, pending, preparing, ready, completed, cancelled,
+    totalAmount: Number(revenueResult._sum.totalAmount ?? 0),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function createOrder(data: {
+  tableNumber?: string;
+  source?: "CUSTOMER_QR" | "POS";
+  qrToken?: string;
+  items: Array<{ menuItemId: string; quantity: number }>;
+}) {
+  // Compute total from real DB prices
+  const menuItems = await db.menuItem.findMany({
+    where: { id: { in: data.items.map((i) => i.menuItemId) } },
+  });
+
+  const orderItems = data.items.map((item) => {
+    const menuItem = menuItems.find((m) => m.id === item.menuItemId);
+    const unitPrice = Number(menuItem?.promoPrice ?? menuItem?.price ?? 0);
     return {
-      total: todayOrders.length,
-      pending: todayOrders.filter((o) => o.status === "PENDING").length,
-      preparing: todayOrders.filter((o) => o.status === "PREPARING").length,
-      ready: todayOrders.filter((o) => o.status === "READY").length,
-      completed: todayOrders.filter((o) => o.status === "COMPLETED").length,
-      cancelled: todayOrders.filter((o) => o.status === "CANCELLED").length,
-      totalAmount: todayOrders
-        .filter((o) => o.status === "COMPLETED")
-        .reduce((sum, o) => sum + o.totalAmount, 0),
+      menuItemId: item.menuItemId,
+      quantity: item.quantity,
+      unitPrice,
+      subtotal: unitPrice * item.quantity,
     };
-  }
-  // Fallback to static mock when no orders today
-  return MOCK_DAILY_ORDER_STATS;
+  });
+
+  const totalAmount = orderItems.reduce((sum, i) => sum + i.subtotal, 0);
+
+  const order = await db.order.create({
+    data: {
+      tableNumber: data.tableNumber,
+      source: data.source ?? "CUSTOMER_QR",
+      qrToken: data.qrToken,
+      totalAmount,
+      status: "PENDING",
+      items: { create: orderItems },
+    },
+    include: { items: { include: { menuItem: { select: { name: true } } } } },
+  });
+
+  revalidatePath("/orders");
+  return order;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UPDATE STATUS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function updateOrderStatus(
+  orderId: string,
+  status: "PENDING" | "PREPARING" | "READY" | "COMPLETED" | "CANCELLED"
+) {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const order = await db.order.update({
+    where: { id: orderId },
+    data: {
+      status,
+      processedById: status === "COMPLETED" ? session.user.id : undefined,
+    },
+    include: { items: { include: { menuItem: { select: { name: true } } } } },
+  });
+
+  revalidatePath("/orders");
+  revalidatePath("/dashboard");
+  return order;
+}
+
+export async function cancelOrder(orderId: string) {
+  return updateOrderStatus(orderId, "CANCELLED");
 }

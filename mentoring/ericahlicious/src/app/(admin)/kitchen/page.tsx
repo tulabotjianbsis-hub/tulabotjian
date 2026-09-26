@@ -40,7 +40,7 @@ export default function KitchenDisplayPage() {
   const loadData = useCallback(async () => {
     try {
       const ordersData = await getKitchenOrders();
-      setOrders(ordersData);
+      setOrders(ordersData as any);
     } catch (error) {
       console.error("Failed to load kitchen orders:", error);
     } finally {

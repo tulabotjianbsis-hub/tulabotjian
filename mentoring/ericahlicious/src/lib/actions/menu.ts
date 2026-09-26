@@ -1,60 +1,89 @@
 "use server";
 
-import {
-  MOCK_MENU_ITEMS,
-  MOCK_INGREDIENTS,
-  MOCK_MENU_CATEGORIES,
-  type MockMenuItem,
-} from "@/lib/mock-data";
+import { db } from "@/lib/db";
+import { auth } from "@/auth";
+import { revalidatePath } from "next/cache";
 
-// In-memory mutable store
-let menuItems: MockMenuItem[] = [...MOCK_MENU_ITEMS];
+// ─────────────────────────────────────────────────────────────────────────────
+// READ
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getMenuItems(filters?: {
-  category?: string;
+  categoryId?: string;
   search?: string;
   includeArchived?: boolean;
 }) {
-  let result = [...menuItems];
-  if (filters?.includeArchived === false) result = result.filter((m) => !m.isArchived);
-  if (filters?.category) result = result.filter((m) => m.category === filters.category);
-  if (filters?.search) {
-    const q = filters.search.toLowerCase();
-    result = result.filter(
-      (m) => m.name.toLowerCase().includes(q) || (m.description || "").toLowerCase().includes(q)
-    );
-  }
-  return result;
+  return db.menuItem.findMany({
+    where: {
+      status: filters?.includeArchived ? undefined : "ACTIVE",
+      categoryId: filters?.categoryId || undefined,
+      name: filters?.search ? { contains: filters.search } : undefined,
+    },
+    include: {
+      category: true,
+      ingredients: { include: { ingredient: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 export async function getMenuItemById(id: string) {
-  return menuItems.find((m) => m.id === id) || null;
+  return db.menuItem.findUnique({
+    where: { id },
+    include: {
+      category: true,
+      ingredients: { include: { ingredient: true } },
+    },
+  });
+}
+
+export async function getMenuCategories() {
+  return db.menuCategory.findMany({ orderBy: { name: "asc" } });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function createMenuCategory(name: string) {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const cat = await db.menuCategory.create({ data: { name } });
+  revalidatePath("/menu");
+  return cat;
 }
 
 export async function createMenuItem(data: {
   name: string;
   description?: string;
   price: number;
-  category: string;
+  categoryId: string;
   imageUrl?: string;
-  promoPrice?: number;
+  promoPrice?: number | null;
 }) {
-  const newItem = {
-    id: `menu-${Date.now()}`,
-    name: data.name,
-    description: data.description || null,
-    price: data.price,
-    category: data.category,
-    imageUrl: data.imageUrl || null,
-    isArchived: false,
-    promoPrice: data.promoPrice || null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ingredients: [],
-  };
-  menuItems = [newItem, ...menuItems];
-  return newItem;
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const item = await db.menuItem.create({
+    data: {
+      name: data.name,
+      description: data.description,
+      price: data.price,
+      categoryId: data.categoryId,
+      imageUrl: data.imageUrl,
+      promoPrice: data.promoPrice ?? null,
+      status: "ACTIVE",
+    },
+    include: { category: true, ingredients: { include: { ingredient: true } } },
+  });
+  revalidatePath("/menu");
+  return item;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UPDATE
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function updateMenuItem(
   id: string,
@@ -62,26 +91,42 @@ export async function updateMenuItem(
     name?: string;
     description?: string | null;
     price?: number;
-    category?: string;
+    categoryId?: string;
     imageUrl?: string | null;
     promoPrice?: number | null;
-    isArchived?: boolean;
   }
 ) {
-  menuItems = menuItems.map((m) =>
-    m.id === id ? { ...m, ...data, updatedAt: new Date() } : m
-  );
-  return menuItems.find((m) => m.id === id) || null;
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const item = await db.menuItem.update({
+    where: { id },
+    data,
+    include: { category: true, ingredients: { include: { ingredient: true } } },
+  });
+  revalidatePath("/menu");
+  return item;
 }
 
-export async function deleteMenuItem(id: string) {
-  return updateMenuItem(id, { isArchived: true });
+export async function archiveMenuItem(id: string) {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  await db.menuItem.update({ where: { id }, data: { status: "ARCHIVED" } });
+  revalidatePath("/menu");
 }
 
-export async function getMenuCategories() {
-  const fromItems = [...new Set(menuItems.filter((m) => !m.isArchived).map((m) => m.category))];
-  return fromItems.length > 0 ? fromItems.sort() : MOCK_MENU_CATEGORIES;
+export async function restoreMenuItem(id: string) {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  await db.menuItem.update({ where: { id }, data: { status: "ACTIVE" } });
+  revalidatePath("/menu");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INGREDIENT LINKING
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function linkIngredientToMenuItem(
   menuItemId: string,
@@ -89,80 +134,21 @@ export async function linkIngredientToMenuItem(
   quantity: number,
   unit: string
 ) {
-  const ingredient = MOCK_INGREDIENTS.find((i) => i.id === ingredientId);
-  menuItems = menuItems.map((m): MockMenuItem => {
-    if (m.id !== menuItemId) return m;
-    const existing = m.ingredients.find((i) => i.id === ingredientId);
-    if (existing) {
-      return {
-        ...m,
-        ingredients: m.ingredients.map((i) =>
-          i.id === ingredientId ? { ...i, quantity, unit } : i
-        ),
-      };
-    }
-    return {
-      ...m,
-      ingredients: [
-        ...m.ingredients,
-        {
-          id: ingredientId,
-          name: ingredient?.name || "Unknown",
-          quantity,
-          unit,
-          currentStock: ingredient?.stock || 0,
-        },
-      ],
-    };
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  await db.menuItemIngredient.upsert({
+    where: { menuItemId_ingredientId: { menuItemId, ingredientId } },
+    create: { menuItemId, ingredientId, quantity, unit },
+    update: { quantity, unit },
   });
-  return { menuItemId, ingredientId, quantity, unit };
+  revalidatePath("/menu");
 }
 
 export async function unlinkIngredientFromMenuItem(menuItemId: string, ingredientId: string) {
-  menuItems = menuItems.map((m) =>
-    m.id === menuItemId
-      ? { ...m, ingredients: m.ingredients.filter((i: { id: string }) => i.id !== ingredientId) }
-      : m
-  );
-  return { count: 1 };
-}
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
 
-export async function getMenuItemRecipe(menuItemId: string) {
-  const menuItem = menuItems.find((m) => m.id === menuItemId);
-  if (!menuItem) return null;
-  return {
-    id: menuItem.id,
-    name: menuItem.name,
-    price: menuItem.price,
-    promoPrice: menuItem.promoPrice,
-    ingredients: menuItem.ingredients as Array<{
-      id: string; name: string; quantity: number; unit: string; currentStock: number;
-    }>,
-  };
-}
-
-export async function calculateRecipeCost(menuItemId: string): Promise<{
-  totalCost: number;
-  breakdown: Array<{ name: string; quantity: number; unit: string; cost: number }>;
-  margin: number;
-  marginPercent: number;
-}> {
-  const recipe = await getMenuItemRecipe(menuItemId);
-  if (!recipe) return { totalCost: 0, breakdown: [], margin: 0, marginPercent: 0 };
-
-  const breakdown: Array<{ name: string; quantity: number; unit: string; cost: number }> = [];
-  let totalCost = 0;
-
-  for (const ing of recipe.ingredients) {
-    let costPerUnit = 10;
-    if (ing.unit === "L" || ing.unit === "ml") costPerUnit = 8;
-    if (ing.unit === "pieces" || ing.unit === "dozen") costPerUnit = 0.5;
-    const cost = ing.quantity * costPerUnit;
-    breakdown.push({ name: ing.name, quantity: ing.quantity, unit: ing.unit, cost });
-    totalCost += cost;
-  }
-
-  const margin = recipe.price - totalCost;
-  const marginPercent = recipe.price > 0 ? (margin / recipe.price) * 100 : 0;
-  return { totalCost, breakdown, margin, marginPercent };
+  await db.menuItemIngredient.deleteMany({ where: { menuItemId, ingredientId } });
+  revalidatePath("/menu");
 }

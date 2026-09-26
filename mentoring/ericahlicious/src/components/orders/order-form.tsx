@@ -110,10 +110,8 @@ export function OrderForm({
       }
 
       await createOrder({
-        type: data.type,
         items: validItems,
-        tableNumber: data.type === "DINE_IN" ? (data.tableNumber ?? undefined) : undefined,
-        specialInstructions: data.specialInstructions || undefined,
+        tableNumber: data.type === "DINE_IN" && data.tableNumber ? String(data.tableNumber) : undefined,
       });
 
       onSuccess();

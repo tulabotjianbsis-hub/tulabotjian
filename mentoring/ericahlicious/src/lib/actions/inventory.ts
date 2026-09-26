@@ -1,90 +1,126 @@
 "use server";
 
-import {
-  MOCK_INGREDIENTS,
-  MOCK_INVENTORY_CATEGORIES,
-  MOCK_INVENTORY_LOGS,
-  type MockIngredient,
-  type MockInventoryLog,
-} from "@/lib/mock-data";
+import { db } from "@/lib/db";
+import { auth } from "@/auth";
+import { revalidatePath } from "next/cache";
 
-// In-memory mutable store
-let ingredients: MockIngredient[] = [...MOCK_INGREDIENTS];
-let inventoryLogs: MockInventoryLog[] = [...MOCK_INVENTORY_LOGS];
+// ─────────────────────────────────────────────────────────────────────────────
+// READ
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function getIngredients(filters?: {
-  category?: string;
+  categoryId?: string;
   status?: string;
   search?: string;
 }) {
-  let result = [...ingredients];
-  if (filters?.category) result = result.filter((i) => i.category === filters.category);
-  if (filters?.status) result = result.filter((i) => i.status === filters.status);
-  if (filters?.search) {
-    const q = filters.search.toLowerCase();
-    result = result.filter((i) => i.name.toLowerCase().includes(q));
-  }
-  return result;
+  return db.ingredient.findMany({
+    where: {
+      categoryId: filters?.categoryId || undefined,
+      status: (filters?.status as any) || undefined,
+      name: filters?.search ? { contains: filters.search } : undefined,
+    },
+    include: {
+      category: true,
+      updatedBy: { select: { id: true, name: true } },
+    },
+    orderBy: { name: "asc" },
+  });
 }
 
 export async function getIngredientById(id: string) {
-  return ingredients.find((i) => i.id === id) || null;
+  return db.ingredient.findUnique({
+    where: { id },
+    include: {
+      category: true,
+      updatedBy: { select: { id: true, name: true } },
+      logs: { take: 10, orderBy: { createdAt: "desc" }, include: { recordedBy: { select: { name: true } } } },
+    },
+  });
+}
+
+export async function getInventoryCategories() {
+  return db.inventoryCategory.findMany({ orderBy: { name: "asc" } });
+}
+
+export async function getInventoryLogs(ingredientId?: string) {
+  return db.inventoryLog.findMany({
+    where: ingredientId ? { ingredientId } : undefined,
+    include: {
+      ingredient: { select: { name: true } },
+      recordedBy: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function createInventoryCategory(name: string) {
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const cat = await db.inventoryCategory.create({ data: { name } });
+  revalidatePath("/ingredients");
+  return cat;
 }
 
 export async function createIngredient(data: {
   name: string;
-  category: string;
+  categoryId: string;
   stock: number;
   unit: string;
   supplier?: string;
   expiryDate?: Date | null;
 }) {
-  const newItem = {
-    id: `ing-${Date.now()}`,
-    name: data.name,
-    category: data.category,
-    stock: data.stock,
-    unit: data.unit,
-    supplier: data.supplier || null,
-    expiryDate: data.expiryDate || null,
-    status: "GOOD",
-    updatedById: null,
-    updatedAt: new Date(),
-    updatedBy: null,
-    menuItems: [],
-    logs: [],
-    alerts: [],
-  };
-  ingredients = [newItem, ...ingredients];
-  return newItem;
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const status = data.stock === 0 ? "CRITICAL" : data.stock < 1 ? "CRITICAL" : data.stock < 3 ? "LOW" : "GOOD";
+
+  const item = await db.ingredient.create({
+    data: {
+      name: data.name,
+      categoryId: data.categoryId,
+      stock: data.stock,
+      unit: data.unit,
+      supplier: data.supplier,
+      expiryDate: data.expiryDate ?? null,
+      status: status as any,
+      updatedById: session.user.id,
+    },
+    include: { category: true, updatedBy: { select: { id: true, name: true } } },
+  });
+  revalidatePath("/ingredients");
+  return item;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UPDATE / ADJUST STOCK
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function updateIngredient(
   id: string,
   data: {
     name?: string;
-    category?: string;
-    stock?: number;
+    categoryId?: string;
     unit?: string;
     supplier?: string | null;
     expiryDate?: Date | null;
-    status?: string;
   }
 ) {
-  ingredients = ingredients.map((i) =>
-    i.id === id ? { ...i, ...data, updatedAt: new Date() } : i
-  );
-  return ingredients.find((i) => i.id === id) || null;
-}
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
 
-export async function deleteIngredient(id: string) {
-  ingredients = ingredients.filter((i) => i.id !== id);
-  return { id };
-}
-
-export async function getInventoryCategories() {
-  const fromItems = [...new Set(ingredients.map((i) => i.category))];
-  return fromItems.length > 0 ? fromItems.sort() : MOCK_INVENTORY_CATEGORIES;
+  const item = await db.ingredient.update({
+    where: { id },
+    data: { ...data, updatedById: session.user.id },
+    include: { category: true, updatedBy: { select: { id: true, name: true } } },
+  });
+  revalidatePath("/ingredients");
+  return item;
 }
 
 export async function recordInventoryAdjustment(data: {
@@ -93,58 +129,42 @@ export async function recordInventoryAdjustment(data: {
   quantityChanged: number;
   reason?: string;
 }) {
-  const ingredient = ingredients.find((i) => i.id === data.ingredientId);
+  const session = await auth();
+  if (!session?.user) throw new Error("Unauthorized");
+
+  const ingredient = await db.ingredient.findUnique({ where: { id: data.ingredientId } });
   if (!ingredient) throw new Error("Ingredient not found");
 
-  const previousStock = ingredient.stock;
+  const previousStock = Number(ingredient.stock);
   const delta =
     data.type === "RECEIVE"
-      ? data.quantityChanged
+      ? Math.abs(data.quantityChanged)
       : data.type === "CONSUME" || data.type === "WASTE"
       ? -Math.abs(data.quantityChanged)
-      : data.quantityChanged; // ADJUSTMENT can be positive or negative
+      : data.quantityChanged;
 
   const newStock = Math.max(0, previousStock + delta);
+  const status = newStock === 0 ? "CRITICAL" : newStock < 1 ? "CRITICAL" : newStock < 3 ? "LOW" : "GOOD";
 
-  // Calculate status
-  const status =
-    newStock === 0
-      ? "EXPIRED"
-      : newStock < 1
-      ? "CRITICAL"
-      : newStock < 3
-      ? "LOW"
-      : "GOOD";
+  // Transactional update
+  const [log] = await db.$transaction([
+    db.inventoryLog.create({
+      data: {
+        ingredientId: data.ingredientId,
+        type: data.type,
+        quantityChanged: data.quantityChanged,
+        reason: data.reason,
+        previousStock,
+        newStock,
+        recordedById: session.user.id,
+      },
+    }),
+    db.ingredient.update({
+      where: { id: data.ingredientId },
+      data: { stock: newStock, status: status as any, updatedById: session.user.id },
+    }),
+  ]);
 
-  ingredients = ingredients.map((i) =>
-    i.id === data.ingredientId
-      ? { ...i, stock: newStock, status, updatedAt: new Date() }
-      : i
-  );
-
-  const log = {
-    id: `log-${Date.now()}`,
-    ingredientId: data.ingredientId,
-    type: data.type,
-    quantityChanged: data.quantityChanged,
-    reason: data.reason || null,
-    previousStock,
-    newStock,
-    recordedById: null,
-    createdAt: new Date(),
-    recordedBy: { name: "System" },
-  };
-  inventoryLogs = [log, ...inventoryLogs];
+  revalidatePath("/ingredients");
   return log;
-}
-
-export async function getInventoryLogs(ingredientId?: string) {
-  if (ingredientId) {
-    return inventoryLogs.filter((l) => l.ingredientId === ingredientId);
-  }
-  return inventoryLogs;
-}
-
-export async function calculateIngredientCost(_menuItemId: string) {
-  return 0;
 }

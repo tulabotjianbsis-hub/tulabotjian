@@ -76,7 +76,7 @@ export function IngredientForm({
       if (isEditing) {
         await updateIngredient(initialData!.id!, {
           name: data.name,
-          category: data.category,
+          categoryId: data.category,
           unit: data.unit,
           supplier: data.supplier || undefined,
           expiryDate: expiryDate,
@@ -84,7 +84,7 @@ export function IngredientForm({
       } else {
         await createIngredient({
           name: data.name,
-          category: data.category,
+          categoryId: data.category,
           stock: data.stock,
           unit: data.unit,
           supplier: data.supplier || undefined,

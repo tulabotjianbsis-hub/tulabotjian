@@ -1,12 +1,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
-import {
-  MOCK_INGREDIENTS,
-  MOCK_ANALYTICS,
-  MOCK_RECOMMENDATIONS,
-  MOCK_ORDERS,
-  MOCK_DAILY_ORDER_STATS,
-} from "@/lib/mock-data";
+import { getDashboardStats, getTopSellingItems, getInventoryStatusCards, getRecommendations } from "@/lib/actions/analytics";
+import { getOrders, getDailyOrderStats } from "@/lib/actions/orders";
 import { OwnerDashboard } from "@/components/dashboard/OwnerDashboard";
 import { AdminDashboard } from "@/components/dashboard/AdminDashboard";
 import { SupervisorDashboard } from "@/components/dashboard/SupervisorDashboard";
@@ -16,50 +11,73 @@ export default async function DashboardPage() {
   if (!session?.user) redirect("/login");
   const role = (session.user as { role?: string })?.role || "SUPERVISOR";
 
-  // Compute inventory status summary
-  const lowStock = MOCK_INGREDIENTS.filter((i) => i.status === "LOW" || i.status === "CRITICAL");
-  const goodStock = MOCK_INGREDIENTS.filter((i) => i.status === "GOOD");
-  const expiringSoon = MOCK_INGREDIENTS.filter((i) => {
-    if (!i.expiryDate) return false;
-    const days = Math.ceil((i.expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return days > 0 && days <= 7;
-  });
+  // Fetch real data in parallel
+  const [stats, topItems, inventoryCards, recommendations, orders, dailyStats] =
+    await Promise.all([
+      getDashboardStats(),
+      getTopSellingItems("week"),
+      getInventoryStatusCards(),
+      getRecommendations(),
+      getOrders(),
+      getDailyOrderStats(),
+    ]);
 
-  // Representative inventory status cards (pick 3)
-  const statusCards = [
-    lowStock[0] ? { name: lowStock[0].name, status: "Low Stock", type: "low" as const } : null,
-    goodStock[0] ? { name: goodStock[0].name, status: "In Stock", type: "good" as const } : null,
-    lowStock.find((i) => i.status === "CRITICAL" && i.stock === 0)
-      ? { name: lowStock.find((i) => i.status === "CRITICAL" && i.stock === 0)!.name, status: "Out Of Stock", type: "out" as const }
-      : goodStock[1]
-      ? { name: goodStock[1].name, status: "In Stock", type: "good" as const }
-      : null,
-  ].filter(Boolean) as { name: string; status: string; type: "low" | "good" | "out" }[];
+  // Map inventory status cards to component shape
+  const statusCards = inventoryCards.slice(0, 6).map((ing) => ({
+    name: ing.name,
+    status: ing.status === "GOOD" ? "In Stock" : ing.status === "LOW" ? "Low Stock" : "Critical",
+    type: (ing.status === "GOOD" ? "good" : "low") as "good" | "low" | "out",
+  }));
+
+  // Map top items for charts
+  const topItemsForChart = topItems.map((i) => ({
+    name: i.name,
+    quantity: i.quantity,
+    revenue: i.revenue,
+  }));
+
+  // Usage insights and restocking notes derived from recommendations
+  const usageInsights = recommendations
+    .filter((r) => r.type === "RESTOCK_LOW" || r.type === "RESTOCK_CRITICAL")
+    .map((r) => r.description)
+    .slice(0, 3);
+
+  const restockingNotes = recommendations
+    .filter((r) => r.type === "RESTOCK_CRITICAL")
+    .map((r) => r.description)
+    .slice(0, 3);
+
+  // Serialize Decimal/Date from Prisma for client components
+  const serializedOrders = orders.map((o) => ({
+    ...o,
+    totalAmount: Number(o.totalAmount),
+    createdAt: o.createdAt.toISOString(),
+    updatedAt: o.updatedAt.toISOString(),
+    items: o.items.map((i) => ({
+      ...i,
+      unitPrice: Number(i.unitPrice),
+      subtotal: Number(i.subtotal),
+      menuItem: { name: i.menuItem.name },
+    })),
+  }));
 
   const props = {
     statusCards,
-    topItems: MOCK_ANALYTICS.topItems,
-    recommendations: MOCK_RECOMMENDATIONS,
-    totalIngredients: MOCK_INGREDIENTS.length,
-    lowStockCount: lowStock.length,
-    expiringSoonCount: expiringSoon.length,
-    mostUsed: MOCK_INGREDIENTS.slice(0, 4).map((i) => ({ name: i.name, usage: Math.floor(Math.random() * 8) + 3 })),
+    topItems: topItemsForChart,
+    recommendations,
+    totalIngredients: stats.totalIngredients,
+    lowStockCount: stats.lowStockCount,
+    expiringSoonCount: 0, // could add expiry query
+    mostUsed: topItemsForChart.slice(0, 4).map((i) => ({ name: i.name, usage: i.quantity })),
     stockDistribution: [
-      { name: "Good", value: goodStock.length, color: "#22c55e" },
-      { name: "Low", value: lowStock.length, color: "#eab308" },
+      { name: "Good", value: inventoryCards.filter((i) => i.status === "GOOD").length, color: "#22c55e" },
+      { name: "Low",  value: inventoryCards.filter((i) => i.status === "LOW").length,  color: "#eab308" },
+      { name: "Critical", value: inventoryCards.filter((i) => i.status === "CRITICAL").length, color: "#ef4444" },
     ],
-    usageInsights: [
-      "Fresh Milk usage increased by 35% this week compared to last week.",
-      "Coffee beans consumption rose by 20% during peak hours (8 AM – 11 AM).",
-      "Sugar usage decreased by 15%, indicating lower demand for sweet beverages.",
-    ],
-    restockingNotes: [
-      "Restock coffee beans (2kg) within the next 2 days to prevent stockout.",
-      "Order at least 10 liters of milk today to meet projected demand for the next 3 days.",
-      "Increase sugar stock by +20% due to rising usage trend this week.",
-    ],
-    orders: MOCK_ORDERS,
-    dailyStats: MOCK_DAILY_ORDER_STATS,
+    usageInsights,
+    restockingNotes,
+    orders: serializedOrders as any,
+    dailyStats,
   };
 
   if (role === "OWNER") return <OwnerDashboard {...props} />;

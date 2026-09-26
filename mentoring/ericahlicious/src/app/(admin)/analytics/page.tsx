@@ -1,11 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import {
-  getSalesReport,
-  getInventoryReport,
-  getProfitabilityReport,
-} from "@/lib/actions/analytics";
+import { getSalesReport } from "@/lib/actions/analytics";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,14 +49,8 @@ export default function AnalyticsPage() {
   const loadAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      const [sales, inventory, profit] = await Promise.all([
-        getSalesReport(new Date(startDate), new Date(endDate)),
-        getInventoryReport(new Date(startDate), new Date(endDate)),
-        getProfitabilityReport(new Date(startDate), new Date(endDate)),
-      ]);
-      setSalesData(sales);
-      setInventoryData(inventory);
-      setProfitData(profit);
+      const sales = await getSalesReport("month");
+      setSalesData({ totalOrders: sales.totalOrders, totalRevenue: sales.totalRevenue, items: [] });
     } catch (error) {
       console.error("Failed to load analytics:", error);
     } finally {
